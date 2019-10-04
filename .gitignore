@@ -1,0 +1,4 @@
+.tmp
+dist
+package-lock.json
+db
