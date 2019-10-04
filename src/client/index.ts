@@ -4,7 +4,7 @@ import { INotificationsTransport } from '@consento/api/notifications/types'
 import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
 import { format } from 'url'
 import urlParse from 'url-parse'
-import { IGetExpoToken, IExpoNotificationsParts, IExpoNotificationParts, IExpoTransportOptions } from './types'
+import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
 
 interface IURLParts {
@@ -32,14 +32,12 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   _pushToken: PromiseLike<string>
   _url: IURLParts
   _getToken: IGetExpoToken
-  _expo: IExpoNotificationsParts
   handleNotification: (notification: IExpoNotificationParts) => void
 
-  constructor ({ address, expo, getToken }: IExpoTransportOptions) {
+  constructor ({ address, getToken }: IExpoTransportOptions) {
     super()
     this._url = getURLParts(address)
     this._getToken = getToken
-    this._expo = expo
     this.handleNotification = (notification: IExpoNotificationParts): void => {
       this.emit('message', notification.data.idBase64, {
         body: Buffer.from(notification.data.bodyBase64, 'base64'),
@@ -67,9 +65,7 @@ ${JSON.stringify(opts, null, 2)}`)
 
   get token (): PromiseLike<string> {
     if (this._pushToken === undefined) {
-      this._pushToken = this._getToken({
-        expo: this._expo
-      })
+      this._pushToken = this._getToken()
     }
     return this._pushToken
   }

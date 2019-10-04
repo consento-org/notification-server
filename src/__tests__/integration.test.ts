@@ -9,31 +9,10 @@ import { EventEmitter } from 'events'
 import { mkdirSync, mkdtempSync } from 'fs'
 import { createApp, IExpoParts } from '../server/createApp'
 import { createDb } from '../server/createDb'
-import { IExpoNotificationsParts, IExpoTransportOptions } from '../client/types'
+import { IExpoTransportOptions } from '../client/types'
 import { exists } from '../util/exists'
 
 const { Sender } = setup(sodium)
-
-class NotificationsMock implements IExpoNotificationsParts {
-  getExpoPushTokenAsync: () => Promise<string>
-
-  _emitter: EventEmitter = new EventEmitter()
-
-  constructor (opts: {
-    getExpoPushTokenAsync(): Promise<string>
-  }) {
-    this.getExpoPushTokenAsync = opts.getExpoPushTokenAsync
-  }
-
-  addListener (listener: (message: Notification) => void): void {
-    this._emitter.on('message', listener)
-    return null
-  }
-
-  process (message: any): void {
-    this._emitter.emit('message', message)
-  }
-}
 
 describe('working api integration', () => {
   it('subscribe → submit → unsubscribe → submit', cb => {
@@ -50,12 +29,7 @@ describe('working api integration', () => {
     })
     db.reset((error: Error) => {
       if (exists(error)) return cb(error)
-      const notificationsMock = new NotificationsMock({
-        // eslint-disable-next-line @typescript-eslint/require-await
-        async getExpoPushTokenAsync (): Promise<string> {
-          throw new Error('xyz')
-        }
-      })
+      const notificationsMock = new EventEmitter()
       const expoMock: IExpoParts = {
         chunkPushNotifications (messages: ExpoPushMessage[]) {
           return [messages]
@@ -64,7 +38,7 @@ describe('working api integration', () => {
           const result: ExpoPushTicket[] = []
           for (const message of messages) {
             await (new Promise(resolve => {
-              notificationsMock.process(message)
+              notificationsMock.emit('message', message)
               setImmediate(resolve)
             }))
           }
@@ -88,7 +62,6 @@ describe('working api integration', () => {
           }
           const opts: IExpoTransportOptions = {
             address,
-            expo: notificationsMock,
             // eslint-disable-next-line @typescript-eslint/require-await
             async getToken (): Promise<string> {
               return createDummyExpoToken()
@@ -98,7 +71,7 @@ describe('working api integration', () => {
           const receiver = sender.newReceiver()
           const message = 'Hello World'
           const transport = new ExpoTransport(opts)
-          notificationsMock.addListener(transport.handleNotification)
+          notificationsMock.addListener('message', transport.handleNotification)
           transport.on('error', fail)
           const client = new Notifications({ transport })
           client.on('error', fail)
