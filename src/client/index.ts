@@ -2,7 +2,8 @@ import { EventEmitter } from 'events'
 import { IEncryptedMessage, IAnnonymous, IReceiver } from '@consento/api'
 import { INotificationsTransport } from '@consento/api/notifications/types'
 import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
-import { format, URL } from 'url'
+import { format } from 'url'
+import urlParse from 'url-parse'
 import { IGetExpoToken, IExpoNotificationsParts, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
 
@@ -16,7 +17,7 @@ interface IURLParts {
 }
 
 function getURLParts (address: string): IURLParts {
-  const url = new URL(address)
+  const url = urlParse(address)
   return {
     protocol: url.protocol,
     username: url.username,
