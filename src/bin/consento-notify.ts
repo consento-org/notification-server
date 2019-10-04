@@ -32,7 +32,7 @@ const app = createApp({
   })
 })
 
-const port = ("PORT" in process.env) ? parseInt(process.env.PORT) : 3000
+const port = ('PORT' in process.env) ? parseInt(process.env.PORT) : 3000
 const listener = app.listen(port, (error: Error) => {
   log({
     start: listener.address(),
