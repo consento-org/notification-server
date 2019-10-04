@@ -49,12 +49,13 @@ setup as follows:
 const { ExpoTransport } = require('@consento/notification-server')
 const { setup } = require('@consento/api')
 const { sodium } = require('@consento/crypto/core/sodium')
+const { Notifications } = require('expo')
 
 const api = setup({
   cryptoCore: sodium,
   notificationTransport: new ExpoTransport({
     address: 'https://server.com/api', // insert the root of the running notification-server here
-    expo: Expo()
+    getToken: async () => Notifications.getExpoPushTokenAsync() // Read more https://docs.expo.io/versions/latest/guides/push-notifications/
   })
 })
 ```
