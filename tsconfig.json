@@ -10,15 +10,13 @@
     "outDir": "dist",
     "baseUrl": ".",
     "skipLibCheck": true,
-    "types": ["react", "jest"],
+    "types": ["jest"],
+    "declaration": true,
     "paths": {
       "*": [
         "node_modules/*",
         "src/types/*"
       ]
     }
-  },
-  "include": [
-    "src/**/*"
-  ]
+  }
 }
