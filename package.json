@@ -1,7 +1,7 @@
 {
   "name": "notification-server",
-  "version": "1.0.0",
-  "description": "The `@consento/notification-server` is a [expo](https://expo.io) based notification implementation for Consento. It consists of two parts: The Server & The Client.",
+  "version": "0.0.1",
+  "description": "A expo based notification implementation for Consento. Both server & client code. ",
   "private": true,
   "module": "dist/index.ts",
   "main": "dist/index.js",
