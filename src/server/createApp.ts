@@ -4,13 +4,11 @@ import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
 import { IEncryptedMessage } from '@consento/crypto/core/types'
 import { DB } from './createDb'
-import { exists } from '../util/exists'
 
-async function verifyRequest (req: Request, idBase64: string, message: IEncryptedMessage): Promise<boolean> {
+async function verifyRequest (idBase64: string, message: IEncryptedMessage): Promise<boolean> {
   const id = Buffer.from(idBase64, 'base64')
   if (!await sodium.verify(id, message.signature, message.body)) {
-    req.res.status(400).end('invalid-signature')
-    return false
+    throw Object.assign(new Error('invalid-signature'), { httpStatus: 400 })
   }
   return true
 }
@@ -104,7 +102,7 @@ export interface EncryptedMessageBase64 {
 export interface IApp {
   subscribe (query: any): Promise<boolean[]>
   unsubscribe (query: any): Promise<boolean[]>
-  send (req: Request): Promise<void>
+  send (req: Request): Promise<string[]>
 }
 
 export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
@@ -112,28 +110,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     expo = new Expo({})
   }
 
-  function err (req: Request, error: Error): void {
-    logError({
-      type: 'http-error',
-      error
-    })
-    req.res.status(500).send('Error.')
-  }
-
-  function toCb (req: Request): (error: Error, data?: any) => void {
-    let done = false
-    return (error: Error, data: any) => {
-      if (done) return
-      done = true
-      if (exists(error)) {
-        err(req, error)
-        return
-      }
-      req.res.status(200).send(JSON.stringify(data))
-    }
-  }
-
-  function sendMessage (idBase64: string, message: EncryptedMessageBase64, cb: (error: Error, tickets?: string[]) => void): void {
+  async function sendMessage (idBase64: string, message: EncryptedMessageBase64): Promise<string[]> {
     const rid = randomBytes(8)
     const idHex = Buffer.from(idBase64, 'base64').toString('hex')
     log({
@@ -144,57 +121,54 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       }
     })
 
-    db.list(idHex, (error: Error, pushTokensHex?: string[]) => {
-      if (exists(error)) return cb(error)
-      const messages = pushTokensHex.map((pushToken): ExpoPushMessage => {
-        return {
-          to: pushToken,
-          sound: 'default',
-          body: 'Secure message.',
-          ttl: 10000,
-          priority: 'high',
-          data: message
-        }
-      })
+    const pushTokensHex = await new Promise <string[]>((resolve, reject) => db.list(idHex, (error: Error, pushTokensHex: string[]) => {
+      if (error !== null && error !== undefined) {
+        return reject(error)
+      }
+      resolve(pushTokensHex)
+    }))
 
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      ;(async (): Promise<string[]> => {
-        const results = await Promise.all(
-          expo
-            .chunkPushNotifications(messages)
-            .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
-              try {
-                const ticket = await expo.sendPushNotificationsAsync(messagesChunk)
-                return ticket
-              } catch (error) {
-                logError({
-                  type: 'send-error',
-                  target: messages.map(message => message.to),
-                  rid,
-                  error
-                })
-                return null
-              }
-            })
-        )
-        const successful = results.filter(Boolean).reduce((all: string[], partial) => {
-          for (const result of partial) {
-            if (result.status === 'ok') {
-              all.push(result.id)
-              continue
-            }
-            logError({
-              type: 'submission-error',
-              error: result
-            })
-          }
-          return all
-        }, [])
-        return successful
-      })()
-        .catch(cb)
-        .then((tickets: string[]) => cb(null, tickets))
+    const messages = pushTokensHex.map((pushToken): ExpoPushMessage => {
+      return {
+        to: pushToken,
+        sound: 'default',
+        body: 'Secure message.',
+        ttl: 10000,
+        priority: 'high',
+        data: message
+      }
     })
+
+    const chunkedResult = await Promise.all(
+      expo
+        .chunkPushNotifications(messages)
+        .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
+          try {
+            return await expo.sendPushNotificationsAsync(messagesChunk)
+          } catch (error) {
+            logError({
+              type: 'send-error',
+              target: messages.map(message => message.to),
+              rid,
+              error
+            })
+            return null
+          }
+        })
+    )
+    return chunkedResult.filter(Boolean).reduce((all: string[], partial) => {
+      for (const result of partial) {
+        if (result.status === 'ok') {
+          all.push(result.id)
+          continue
+        }
+        logError({
+          type: 'submission-error',
+          error: result
+        })
+      }
+      return all
+    }, [])
   }
 
   return {
@@ -206,8 +180,8 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       const entries = await processTokens(log, query)
       return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb))
     },
-    send: async (req: Request): Promise<void> => {
-      const { idBase64, bodyBase64, signatureBase64 } = req.query
+    async send (query: any): Promise<string[]> {
+      const { idBase64, bodyBase64, signatureBase64 } = query
       const messageBase64 = {
         idBase64,
         bodyBase64,
@@ -217,9 +191,8 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         body: Buffer.from(bodyBase64, 'base64'),
         signature: Buffer.from(signatureBase64, 'base64')
       }
-      if (await verifyRequest(req, idBase64, message)) {
-        await sendMessage(idBase64, messageBase64, toCb(req))
-      }
+      await verifyRequest(idBase64, message)
+      return sendMessage(idBase64, messageBase64)
     }
   }
 }

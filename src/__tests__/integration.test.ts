@@ -25,6 +25,7 @@ describe('working api integration', () => {
       path: dbPath,
       maxSubscriptions: 10,
       replicate: false,
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       log: () => {}
     })
     db.reset((error: Error) => {

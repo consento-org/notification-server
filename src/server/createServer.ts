@@ -24,7 +24,7 @@ export function createServer (opts: AppOptions): Express {
       })
   }
 
-  server.post('/send', app.send)
+  server.post('/send', wrapAsync(app.send))
   server.post('/subscribe', wrapAsync(app.subscribe))
   server.post('/unsubscribe', wrapAsync(app.unsubscribe))
   return server

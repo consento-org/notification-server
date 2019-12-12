@@ -65,6 +65,7 @@ describe('database operations', () => {
   }))
   it('allows resetting the db', cb => {
     const db = createDb({
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
       log: () => {},
       path: dbPath,
       replicate: false,
