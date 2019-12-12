@@ -1,13 +1,13 @@
-import { setup } from '@consento/crypto'
+import { setup, IEncodable } from '@consento/crypto'
 import { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
-import { IReceiver } from '@consento/api'
 import { Notifications } from '@consento/api/notifications'
 import { ExpoTransport } from '../client'
 import { createDummyExpoToken } from '../server/__tests__/token-dummy'
 import { EventEmitter } from 'events'
 import { mkdirSync, mkdtempSync } from 'fs'
-import { createApp, IExpoParts } from '../server/createApp'
+import { IExpoParts } from '../server/createApp'
+import { createServer } from '../server/createServer'
 import { createDb } from '../server/createDb'
 import { IExpoTransportOptions } from '../client/types'
 import { exists } from '../util/exists'
@@ -45,7 +45,7 @@ describe('working api integration', () => {
           return result
         }
       }
-      const app = createApp({
+      const app = createServer({
         db,
         expo: expoMock,
         log: (info) => {

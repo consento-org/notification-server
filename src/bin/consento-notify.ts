@@ -1,5 +1,5 @@
 #!/usr/bin/env npx ts-node
-import { createApp } from '../server/createApp'
+import { createServer } from '../server/createServer'
 import { createDb } from '../server/createDb'
 import Expo from 'expo-server-sdk'
 
@@ -24,7 +24,7 @@ const db = createDb({
   replicate: false
 })
 
-const app = createApp({
+const app = createServer({
   db,
   log,
   logError,

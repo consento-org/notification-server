@@ -1,4 +1,4 @@
-import express, { Request, Express } from 'express'
+import { Request } from 'express'
 import { randomBytes } from 'crypto'
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
@@ -95,7 +95,13 @@ export interface EncryptedMessageBase64 {
   signatureBase64: string
 }
 
-export function createApp ({ db, log, logError, expo }: AppOptions): Express {
+export interface IApp {
+  subscribe (req: Request): Promise<void>
+  unsubscribe (req: Request): Promise<void>
+  send (req: Request): Promise<void>
+}
+
+export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   if (expo === undefined) {
     expo = new Expo({})
   }
@@ -185,36 +191,33 @@ export function createApp ({ db, log, logError, expo }: AppOptions): Express {
     })
   }
 
-  const app = express()
-  app.post('/subscribe', async (req: Request) => {
-    const entries = await processTokens(log, req)
-    if (entries.length > 0) {
-      asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
+  return {
+    subscribe: async (req: Request): Promise<void> => {
+      const entries = await processTokens(log, req)
+      if (entries.length > 0) {
+        asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
+      }
+    },
+    unsubscribe: async (req: Request) => {
+      const entries = await processTokens(log, req)
+      if (entries.length > 0) {
+        asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.unsubscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
+      }
+    },
+    send: async (req: Request): Promise<void> => {
+      const { idBase64, bodyBase64, signatureBase64 } = req.query
+      const messageBase64 = {
+        idBase64,
+        bodyBase64,
+        signatureBase64
+      }
+      const message = {
+        body: Buffer.from(bodyBase64, 'base64'),
+        signature: Buffer.from(signatureBase64, 'base64')
+      }
+      if (await verifyRequest(req, idBase64, message)) {
+        await sendMessage(idBase64, messageBase64, toCb(req))
+      }
     }
-  })
-
-  app.post('/unsubscribe', async (req: Request) => {
-    const entries = await processTokens(log, req)
-    if (entries.length > 0) {
-      asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.unsubscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
-    }
-  })
-
-  app.post('/send', async (req: Request) => {
-    const { idBase64, bodyBase64, signatureBase64 } = req.query
-    const messageBase64 = {
-      idBase64,
-      bodyBase64,
-      signatureBase64
-    }
-    const message = {
-      body: Buffer.from(bodyBase64, 'base64'),
-      signature: Buffer.from(signatureBase64, 'base64')
-    }
-    if (await verifyRequest(req, idBase64, message)) {
-      await sendMessage(idBase64, messageBase64, toCb(req))
-    }
-  })
-
-  return app
+  }
 }
