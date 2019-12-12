@@ -7,7 +7,7 @@ import urlParse from 'url-parse'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
 
-interface IURLParts {
+export interface IURLParts {
   protocol: string
   username: string
   password: string

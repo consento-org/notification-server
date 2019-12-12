@@ -72,17 +72,17 @@ describe('working api integration', () => {
           const message = 'Hello World'
           const transport = new ExpoTransport(opts)
           notificationsMock.addListener('message', transport.handleNotification)
-          transport.on('error', fail)
           const client = new Notifications({ transport })
-          client.on('error', fail)
-          client.on('message', (receivedChannel: IReceiver, receivedMessage: any): void => {
-            expect(receivedChannel).toBe(receiver)
-            expect(receivedMessage).toBe(message)
-            cb()
-          })
-          expect(await client.subscribe([receiver])).toBe(true)
-          await client.send(sender, message)
-        })()
+          transport.on('error', fail)
+          transport.on('message', client.handle)
+          const { promise: receive } = await client.receive(receiver)
+          await Promise.all([
+            client.send(sender, message),
+            receive.then((receivedMessage: IEncodable) => {
+              expect(receivedMessage).toBe(message)
+            })
+          ])
+        })().then(cb)
       })
     })
   })
