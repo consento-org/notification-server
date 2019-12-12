@@ -15,39 +15,46 @@ async function verifyRequest (req: Request, idBase64: string, message: IEncrypte
   return true
 }
 
-function asyncSeries<Entry, Result> (
+async function asyncSeries<Entry, Result> (
+  entries: Entry[],
+  op: (entry: Entry, cb: (error: Error | null, result: Result) => void) => void
+): Promise<Result[]> {
+  return new Promise <Result[]>((resolve, reject) => _asyncSeries(entries, op, resolve, reject, []))
+}
+
+function _asyncSeries<Entry, Result> (
   entries: Entry[],
   op: (entry: Entry, cb: (error: Error | null, result: Result) => void) => void,
-  cb: (error?: Error, result?: Result[]) => void,
-  result?: Result[]
+  resolve: (result: Result[]) => void,
+  reject: (error: Error) => void,
+  result: Result[]
 ): void {
-  if (result === undefined) {
-    result = []
-  }
   if (entries === undefined) {
-    return cb(null, result)
+    return resolve(result)
   }
   if (entries.length === 0) {
-    return cb(null, result)
+    return resolve(result)
   }
   const entry = entries.shift()
-  op(entry, (error, _) => {
-    if (error !== null || error !== undefined) {
-      return cb(error, null)
+  op(entry, (error, partResult) => {
+    if (error !== null && error !== undefined) {
+      return reject(error)
     }
-    asyncSeries(entries, op, cb)
+    result.push(partResult)
+    _asyncSeries(entries, op, resolve, reject, result)
   })
 }
 
-async function processTokens (log: (msg: any) => void, req: Request): Promise<Array<{
+export interface IProcessedToken {
   pushToken: string
   idBase64: string
-}>> {
-  const { pushToken, idsBase64: idsBase64Raw, signaturesBase64: signaturesBase64Raw } = req.query
+}
+
+async function processTokens (log: (msg: any) => void, query: { [key: string]: any }): Promise<IProcessedToken[]> {
+  const { pushToken, idsBase64: idsBase64Raw, signaturesBase64: signaturesBase64Raw } = query
   if (!Expo.isExpoPushToken(pushToken)) {
     log({ invalidRequest: { invalidPushToken: pushToken } })
-    req.res.status(400).end('invalid-push-token')
-    return
+    throw Object.assign(new Error('invalid-push-token'), { httpCode: 400 })
   }
 
   const idsBase64 = idsBase64Raw !== undefined ? idsBase64Raw.split(';') : []
@@ -62,8 +69,7 @@ async function processTokens (log: (msg: any) => void, req: Request): Promise<Ar
     const signature = signaturesBase64[index]
     if (!await sodium.verify(Buffer.from(idBase64, 'base64'), Buffer.from(signature, 'base64'), pushTokenBuffer)) {
       log({ invalidRequest: { invalidSignature: index } })
-      req.res.status(400).end(`invalid-signature[${index}]`)
-      return []
+      throw Object.assign(new Error(`invalid-signature[${index}]`), { httpCode: 400 })
     }
     processedTokens.push({
       pushToken,
@@ -96,8 +102,8 @@ export interface EncryptedMessageBase64 {
 }
 
 export interface IApp {
-  subscribe (req: Request): Promise<void>
-  unsubscribe (req: Request): Promise<void>
+  subscribe (query: any): Promise<boolean[]>
+  unsubscribe (query: any): Promise<boolean[]>
   send (req: Request): Promise<void>
 }
 
@@ -192,17 +198,13 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   }
 
   return {
-    subscribe: async (req: Request): Promise<void> => {
-      const entries = await processTokens(log, req)
-      if (entries.length > 0) {
-        asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
-      }
+    async subscribe (query: any): Promise<boolean[]> {
+      const entries = await processTokens(log, query)
+      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb))
     },
-    unsubscribe: async (req: Request) => {
-      const entries = await processTokens(log, req)
-      if (entries.length > 0) {
-        asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.unsubscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
-      }
+    async unsubscribe (query: any): Promise<boolean[]> {
+      const entries = await processTokens(log, query)
+      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb))
     },
     send: async (req: Request): Promise<void> => {
       const { idBase64, bodyBase64, signatureBase64 } = req.query
