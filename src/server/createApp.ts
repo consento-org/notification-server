@@ -121,21 +121,6 @@ export function createApp ({ db, log, logError, expo }: AppOptions): Express {
     }
   }
 
-  const app = express()
-  app.post('/subscribe', async (req: Request) => {
-    const entries = await processTokens(log, req)
-    if (entries.length > 0) {
-      asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
-    }
-  })
-
-  app.post('/unsubscribe', async (req: Request) => {
-    const entries = await processTokens(log, req)
-    if (entries.length > 0) {
-      asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.unsubscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
-    }
-  })
-
   function sendMessage (idBase64: string, message: EncryptedMessageBase64, cb: (error: Error, tickets?: string[]) => void): void {
     const rid = randomBytes(8)
     const idHex = Buffer.from(idBase64, 'base64').toString('hex')
@@ -199,6 +184,21 @@ export function createApp ({ db, log, logError, expo }: AppOptions): Express {
         .then((tickets: string[]) => cb(null, tickets))
     })
   }
+
+  const app = express()
+  app.post('/subscribe', async (req: Request) => {
+    const entries = await processTokens(log, req)
+    if (entries.length > 0) {
+      asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
+    }
+  })
+
+  app.post('/unsubscribe', async (req: Request) => {
+    const entries = await processTokens(log, req)
+    if (entries.length > 0) {
+      asyncSeries(entries, ({ pushToken, idBase64 }, cb) => db.unsubscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb), toCb(req))
+    }
+  })
 
   app.post('/send', async (req: Request) => {
     const { idBase64, bodyBase64, signatureBase64 } = req.query
