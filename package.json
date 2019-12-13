@@ -1,6 +1,6 @@
 {
   "name": "@consento/notification-server",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "A expo based notification implementation for Consento. Both server & client code. ",
   "private": true,
   "main": "./index.js",
@@ -19,7 +19,7 @@
   "author": "Martin Heidegger <martin.heidegger@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@consento/api": "0.0.10",
+    "@consento/api": "0.0.11",
     "@consento/crypto": "0.0.6",
     "cross-fetch": "^3.0.4",
     "events": "^3.0.0",
@@ -33,7 +33,8 @@
     "rimraf": "^3.0.0",
     "sodium-native": "^2.4.6",
     "url": "^0.11.0",
-    "url-parse": "^1.4.7"
+    "url-parse": "^1.4.7",
+    "ws": "^7.2.0"
   },
   "bin": {
     "consento-notify": "bin/consento-notify.js"
@@ -68,6 +69,7 @@
     "@types/rimraf": "^2.0.3",
     "@types/tape": "^4.2.33",
     "@types/url-parse": "^1.4.3",
+    "@types/ws": "^6.0.4",
     "@typescript-eslint/eslint-plugin": "^2.11.0",
     "babel-preset-expo": "^8.0.0",
     "eslint": "^6.7.2",

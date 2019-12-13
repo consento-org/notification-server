@@ -75,7 +75,6 @@ describe('working api integration', () => {
           notificationsMock.addListener('message', transport.handleNotification)
           const client = new Notifications({ transport })
           transport.on('error', fail)
-          transport.on('message', client.handle)
           const { promise: receive } = await client.receive(receiver)
           await Promise.all([
             client.send(sender, message),
