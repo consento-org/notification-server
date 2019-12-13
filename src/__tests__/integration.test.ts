@@ -83,6 +83,14 @@ describe('working api integration', () => {
               expect(receivedMessage).toBe(message)
             })
           ])
+          await client.subscribe([receiver])
+          // AppState.currentState = 'active'
+          const directMessage = 'Ping Pong'
+          const close = transport.connect()
+          const { promise: receiveThroughSocket } = await client.receive(receiver)
+          await client.send(sender, directMessage)
+          expect(await receiveThroughSocket).toBe(directMessage)
+          close()
         })().then(cb)
       })
     })

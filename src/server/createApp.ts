@@ -1,9 +1,9 @@
-import { Request } from 'express'
 import { randomBytes } from 'crypto'
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
 import { IEncryptedMessage } from '@consento/crypto/core/types'
 import { DB } from './createDb'
+import WebSocket from 'ws'
 
 async function verifyRequest (idBase64: string, message: IEncryptedMessage): Promise<boolean> {
   const id = Buffer.from(idBase64, 'base64')
@@ -100,15 +100,37 @@ export interface EncryptedMessageBase64 {
 }
 
 export interface IApp {
-  subscribe (query: any): Promise<boolean[]>
+  subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]>
   unsubscribe (query: any): Promise<boolean[]>
-  send (req: Request): Promise<string[]>
+  send (query: any): Promise<string[]>
+  closeSocket (session: string): boolean
+}
+
+function split <T> (input: T[], condition: (entry: T) => boolean): [T[], T[]] {
+  const a = []
+  const b = []
+  for (const entry of input) {
+    if (condition(entry)) {
+      a.push(entry)
+    } else {
+      b.push(entry)
+    }
+  }
+  return [a, b]
+}
+
+interface IWebSocketSession {
+  pushTokensHex: Set<string>
+  socket: WebSocket
 }
 
 export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   if (expo === undefined) {
     expo = new Expo({})
   }
+
+  const webSocketsByPushToken: { [pushToken: string]: WebSocket } = {}
+  const webSocketsBySession: { [session: string]: IWebSocketSession } = {}
 
   async function sendMessage (idBase64: string, message: EncryptedMessageBase64): Promise<string[]> {
     const rid = randomBytes(8)
@@ -139,22 +161,46 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       }
     })
 
-    const chunkedResult = await Promise.all(
-      expo
-        .chunkPushNotifications(messages)
-        .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
-          try {
-            return await expo.sendPushNotificationsAsync(messagesChunk)
-          } catch (error) {
-            logError({
-              type: 'send-error',
-              target: messages.map(message => message.to),
-              rid,
-              error
-            })
-            return null
+    const [expoMessages, webSocketMessages] = split(messages, (message: ExpoPushMessage): boolean => {
+      return webSocketsByPushToken[String(message.to)] === undefined
+    })
+
+    const expoPromises = expo
+      .chunkPushNotifications(expoMessages)
+      .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
+        try {
+          return await expo.sendPushNotificationsAsync(messagesChunk)
+        } catch (error) {
+          logError({
+            type: 'send-error',
+            target: messages.map(message => message.to),
+            rid,
+            error
+          })
+          return null
+        }
+      })
+
+    const webSocketPromises = webSocketMessages
+      // eslint-disable-next-line @typescript-eslint/require-await
+      .map(async (message) => new Promise <ExpoPushTicket[]>((resolve, reject) => {
+        const socket = webSocketsByPushToken[String(message.to)]
+        socket.send(JSON.stringify({
+          type: 'message',
+          body: message.data
+        }), (error: Error) => {
+          if (error !== null && error !== undefined) {
+            return reject(error)
           }
+          resolve(null)
         })
+      }).catch(async (error: Error) => {
+        logError(error)
+        return expo.sendPushNotificationsAsync([message])
+      }))
+
+    const chunkedResult = await Promise.all(
+      expoPromises.concat(webSocketPromises)
     )
     return chunkedResult.filter(Boolean).reduce((all: string[], partial) => {
       for (const result of partial) {
@@ -171,14 +217,51 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     }, [])
   }
 
+  const registerSocket = (pushTokenHex: string, session: string, socket: WebSocket): boolean => {
+    webSocketsByPushToken[pushTokenHex] = socket
+    let info = webSocketsBySession[session]
+    if (info === undefined) {
+      info = {
+        pushTokensHex: new Set(),
+        socket
+      }
+      webSocketsBySession[session] = info
+    }
+    if (info.pushTokensHex.has(pushTokenHex)) {
+      info.pushTokensHex.add(pushTokenHex)
+      return true
+    }
+    return false
+  }
+
   return {
-    async subscribe (query: any): Promise<boolean[]> {
+    async subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]> {
       const entries = await processTokens(log, query)
+      if (socket !== undefined) {
+        const foundTokens = new Set<string>()
+        for (const entry of entries) {
+          if (!foundTokens.has(entry.pushToken)) {
+            foundTokens.add(entry.pushToken)
+            registerSocket(entry.pushToken, session, socket)
+          }
+        }
+      }
       return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb))
     },
     async unsubscribe (query: any): Promise<boolean[]> {
       const entries = await processTokens(log, query)
       return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb))
+    },
+    closeSocket (session: string): boolean {
+      const info = webSocketsBySession[session]
+      if (info !== undefined) {
+        return false
+      }
+      delete webSocketsBySession[session]
+      for (const pushTokenHex of info.pushTokensHex) {
+        delete webSocketsByPushToken[pushTokenHex]
+      }
+      return true
     },
     async send (query: any): Promise<string[]> {
       const { idBase64, bodyBase64, signatureBase64 } = query
