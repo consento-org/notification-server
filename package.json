@@ -8,7 +8,7 @@
     "start": "npm run serve",
     "serve": "src/bin/consento-notify",
     "watch-node": "nodemon dist/bin/consento-notify",
-    "ci": "npm run lint && npm run test",
+    "ci": "npm run lint && npm run test -- --no-watchman",
     "test": "jest",
     "build-ts": "tsc",
     "watch-ts": "tsc -w",
