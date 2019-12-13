@@ -135,13 +135,6 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   async function sendMessage (idBase64: string, message: EncryptedMessageBase64): Promise<string[]> {
     const rid = randomBytes(8)
     const idHex = Buffer.from(idBase64, 'base64').toString('hex')
-    log({
-      send: {
-        idHex,
-        message,
-        rid: rid.toString('hex')
-      }
-    })
 
     const pushTokensHex = await new Promise <string[]>((resolve, reject) => db.list(idHex, (error: Error, pushTokensHex: string[]) => {
       if (error !== null && error !== undefined) {
@@ -169,6 +162,14 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       .chunkPushNotifications(expoMessages)
       .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
         try {
+          log({
+            send: {
+              idHex,
+              message,
+              rid: rid.toString('hex'),
+              via: 'expo-push'
+            }
+          })
           return await expo.sendPushNotificationsAsync(messagesChunk)
         } catch (error) {
           logError({
@@ -185,6 +186,14 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       // eslint-disable-next-line @typescript-eslint/require-await
       .map(async (message) => new Promise <ExpoPushTicket[]>((resolve, reject) => {
         const socket = webSocketsByPushToken[String(message.to)]
+        log({
+          send: {
+            idHex,
+            message,
+            rid: rid.toString('hex'),
+            via: 'websocket'
+          }
+        })
         socket.send(JSON.stringify({
           type: 'message',
           body: message.data
@@ -242,6 +251,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         for (const entry of entries) {
           if (!foundTokens.has(entry.pushToken)) {
             foundTokens.add(entry.pushToken)
+            log({ registerWebSocket: { session, pushToken: entry.pushToken } })
             registerSocket(entry.pushToken, session, socket)
           }
         }
