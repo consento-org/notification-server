@@ -264,7 +264,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     },
     closeSocket (session: string): boolean {
       const info = webSocketsBySession[session]
-      if (info !== undefined) {
+      if (info === undefined) {
         return false
       }
       delete webSocketsBySession[session]
