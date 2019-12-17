@@ -4,9 +4,14 @@ import { INotificationsTransport } from '@consento/api/notifications/types'
 import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
 import { format } from 'url'
 import urlParse from 'url-parse'
-import WebSocket from 'ws'
+import WSWebSocket from 'ws'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
+
+// eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
+type WebSocketFactory = new (address: string) => WSWebSocket
+const BuiltInWebSocket: WebSocketFactory = (global as any).WebSocket
+const WebSocket = BuiltInWebSocket !== undefined ? BuiltInWebSocket : WSWebSocket
 
 export interface IURLParts {
   protocol: string
@@ -59,7 +64,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   _url: IURLParts
   _getToken: IGetExpoToken
   _subscriptions: IReceiver[]
-  _ws: WebSocket
+  _ws: WSWebSocket
   handleNotification: (notification: IExpoNotificationParts) => void
   connect: () => () => void
 
@@ -77,7 +82,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       }
     }
     this.handleNotification = (notification: IExpoNotificationParts): void => processInput(notification.data)
-    const handleWSMessage = (ev: WebSocket.MessageEvent): void => {
+    const handleWSMessage = (ev: WSWebSocket.MessageEvent): void => {
       if (typeof ev.data !== 'string') {
         return
       }
@@ -89,14 +94,14 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       }
       processInput(data)
     }
-    const debugError = (ev: WebSocket.ErrorEvent): void => {
+    const debugError = (ev: WSWebSocket.ErrorEvent): void => {
       this.emit('error', ev.error)
     }
-    const handleWSError = (ev: WebSocket.ErrorEvent): void => {
+    const handleWSError = (ev: WSWebSocket.ErrorEvent): void => {
       this.emit('error', ev.error)
       this._ws = undefined
     }
-    const handleWSOpen = async (_: WebSocket.OpenEvent): Promise<void> => {
+    const handleWSOpen = async (_: WSWebSocket.OpenEvent): Promise<void> => {
       this.emit('socket-open')
       this._ws.send(JSON.stringify({
         type: 'subscribe',
