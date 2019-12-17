@@ -92,6 +92,9 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       } catch (err) {
         return
       }
+      if (data.type !== 'message') {
+        return
+      }
       processInput(data.body)
     }
     const debugError = (ev: WSWebSocket.ErrorEvent): void => {
