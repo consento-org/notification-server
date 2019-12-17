@@ -3,6 +3,9 @@ import { createServer } from '../server/createServer'
 import { createDb } from '../server/createDb'
 import Expo from 'expo-server-sdk'
 
+// Using this directly from package.json breaks the release task
+const VERSION = '0.0.8'
+
 function log (obj: any): void {
   console.log(JSON.stringify({
     date: new Date().toISOString(),
@@ -36,7 +39,8 @@ const port = ('PORT' in process.env) ? parseInt(process.env.PORT) : 3000
 const listener = app.listen(port, (error: Error) => {
   log({
     start: listener.address(),
-    error
+    error,
+    version: VERSION
   })
 }).on('error', (error: Error) => {
   logError({
