@@ -13,6 +13,10 @@ type WebSocketFactory = new (address: string) => WSWebSocket
 const BuiltInWebSocket: WebSocketFactory = (global as any).WebSocket
 const WebSocket = BuiltInWebSocket !== undefined ? BuiltInWebSocket : WSWebSocket
 
+function webSocketUrl (webUrl: string): string {
+  return webUrl.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
+}
+
 export interface IURLParts {
   protocol: string
   username: string
@@ -116,7 +120,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     }
     this.connect = () => {
       if (this._ws === undefined) {
-        this._ws = new WebSocket(format(this._url))
+        this._ws = new WebSocket(webSocketUrl(format(this._url)))
         this._ws.onmessage = handleWSMessage
         this._ws.onerror = handleWSError
         this._ws.onopen = handleWSOpen
