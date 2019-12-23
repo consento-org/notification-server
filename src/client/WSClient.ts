@@ -78,14 +78,26 @@ export class WSClient {
     this._instance.onerror = this._onerror
   }
 
-  send (data: any, cb?: (err?: Error) => void): void {
+  _send (attempt: number, data: any, cb?: (err?: Error) => void): void {
     if (this._instance === undefined) {
       if (cb !== undefined) {
         setImmediate(cb, new Error('Not open'))
       }
       return
     }
+    if (this._instance.readyState !== 1) {
+      if (attempt === 5) {
+        setImmediate(cb, new Error('No connection after 500ms.'))
+      } else {
+        setTimeout(() => this._send(attempt + 1, data, cb), 100)
+      }
+      return
+    }
     this._instance.send(data, cb)
+  }
+
+  send (data: any, cb?: (err?: Error) => void): void {
+    this._send(0, data, cb)
   }
 
   close (code?: number, data?: string): void {
