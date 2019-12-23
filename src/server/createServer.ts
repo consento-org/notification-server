@@ -19,6 +19,7 @@ export interface INotificationServer {
 function isOkMessage (data: any): data is {
   type: string
   query: any
+  rid: number
 } {
   if (typeof data !== 'object') {
     return false
@@ -27,6 +28,9 @@ function isOkMessage (data: any): data is {
     return false
   }
   if (typeof data.query !== 'object') {
+    return false
+  }
+  if (typeof data.rid !== 'number') {
     return false
   }
   return data
@@ -86,7 +90,53 @@ export function createServer (opts: AppOptions): INotificationServer {
           return app.unsubscribe(data.query)
         }
       })()
-        .catch(logError)
+        .then(
+          async body => new Promise(resolve => {
+            log({ response: { rid: data.rid, body } })
+            socket.send(JSON.stringify({
+              type: 'response',
+              rid: data.rid,
+              body
+            }), (error: Error) => {
+              if (error !== null && error !== undefined) {
+                logError({
+                  type: 'websocket-success-error',
+                  error
+                })
+              }
+              resolve()
+            })
+          }),
+          async error => new Promise(resolve => {
+            logError({
+              type: 'websocket-error',
+              data,
+              rid: data.rid,
+              error
+            })
+            socket.send(JSON.stringify({
+              type: 'response',
+              rid: data.rid,
+              error: {
+                message: 'Error.',
+                code: '505'
+              }
+            }), (error: Error) => {
+              if (error !== null && error !== undefined) {
+                logError({
+                  type: 'websocket-error-error',
+                  error
+                })
+              }
+              resolve()
+            })
+          })
+        ).catch(error => {
+          logError({
+            type: 'websocket-send-error',
+            error
+          })
+        })
     }
     socket.onclose = () => {
       app.closeSocket(session)

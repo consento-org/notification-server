@@ -6,7 +6,7 @@ import { format } from 'url'
 import urlParse from 'url-parse'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
-import { WSClient, MessageEvent, ErrorEvent, CloseEvent, OpenEvent } from './WSClient'
+import { WSClient, MessageEvent, ErrorEvent, OpenEvent } from './WSClient'
 
 function webSocketUrl (webUrl: string): string {
   return webUrl.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
