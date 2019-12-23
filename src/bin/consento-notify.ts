@@ -13,10 +13,17 @@ function log (obj: any): void {
   }))
 }
 
-function logError (obj: any): void {
+function logError (err: any): void {
+  if (typeof err === 'object' && err.error instanceof Error) {
+    err.error = {
+      message: err.error.message,
+      stack: err.error.stack,
+      ...err.error
+    }
+  }
   console.error(JSON.stringify({
     date: new Date().toISOString(),
-    ...obj
+    ...err
   }))
 }
 
@@ -44,15 +51,21 @@ const listener = app.listen(port, (error: Error) => {
   })
 }).on('error', (error: Error) => {
   logError({
+    type: 'listener-error',
     error
   })
   process.exit(1)
 })
 
 process.on('beforeExit', () => {
-  listener.close(() => {
-    console.log({
-      closed: true
-    })
+  log({ type: 'closing' })
+  listener.close((error) => {
+    if (error !== null && error !== undefined) {
+      return logError({
+        type: 'closing-failed',
+        error
+      })
+    }
+    log({ type: 'closed' })
   })
 })
