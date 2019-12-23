@@ -155,8 +155,9 @@ export function createServer (opts: AppOptions): INotificationServer {
 
   return {
     listen (port, cb: CB) {
-      const server = http.listen(port, cb)
+      const server = http.listen(port)
       const wss = new WebSocket.Server({ server })
+      wss.on('listening', cb)
       wss.on('connection', handleConnection)
       return server
     }
