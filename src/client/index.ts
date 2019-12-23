@@ -4,14 +4,9 @@ import { INotificationsTransport } from '@consento/api/notifications/types'
 import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
 import { format } from 'url'
 import urlParse from 'url-parse'
-import WSWebSocket from 'ws'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
-
-// eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
-type WebSocketFactory = new (address: string) => WSWebSocket
-const BuiltInWebSocket: WebSocketFactory = (global as any).WebSocket
-const WebSocket = BuiltInWebSocket !== undefined ? BuiltInWebSocket : WSWebSocket
+import { WSClient, MessageEvent, ErrorEvent, CloseEvent, OpenEvent } from './WSClient'
 
 function webSocketUrl (webUrl: string): string {
   return webUrl.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
@@ -63,14 +58,18 @@ function isNotification (data: any): data is INotification {
   return true
 }
 
+let globalRid = 0
+const globalRequests: { [rid: number]: (result: { error?: any, data?: any }) => void } = {}
+
 export class ExpoTransport extends EventEmitter implements INotificationsTransport {
   _pushToken: PromiseLike<string>
   _url: IURLParts
   _getToken: IGetExpoToken
   _subscriptions: IReceiver[]
-  _ws: WSWebSocket
+  _ws: WSClient
   handleNotification: (notification: IExpoNotificationParts) => void
   connect: () => () => void
+  disconnect: () => void
 
   constructor ({ address, getToken }: IExpoTransportOptions) {
     super()
@@ -86,7 +85,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       }
     }
     this.handleNotification = (notification: IExpoNotificationParts): void => processInput(notification.data)
-    const handleWSMessage = (ev: WSWebSocket.MessageEvent): void => {
+    const handleWSMessage = (ev: MessageEvent): void => {
       if (typeof ev.data !== 'string') {
         return
       }
@@ -96,57 +95,92 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       } catch (err) {
         return
       }
+      if (data.type === 'response') {
+        const res = globalRequests[data.rid]
+        if (res !== undefined) {
+          res(data)
+        }
+        return
+      }
       if (data.type !== 'message') {
         return
       }
       processInput(data.body)
     }
-    const debugError = (ev: WSWebSocket.ErrorEvent): void => {
+    const debugError = (ev: ErrorEvent): void => {
       this.emit('error', ev.error)
     }
-    const handleWSError = (ev: WSWebSocket.ErrorEvent): void => {
+    const handleWSError = (ev: ErrorEvent): void => {
       this.emit('error', ev.error)
       this._ws = undefined
     }
-    const handleWSOpen = async (_: WSWebSocket.OpenEvent): Promise<void> => {
+    const handleWSOpen = async (_: OpenEvent): Promise<void> => {
       this.emit('socket-open')
-      this._ws.send(JSON.stringify({
-        type: 'subscribe',
-        query: await this._toRequest(this._subscriptions)
-      }))
+      if (this._subscriptions.length === 0) {
+        return
+      }
+      try {
+        await this._wsRequest('subscribe', await this._toRequest(this._subscriptions))
+      } catch (err) {
+        this.emit('error', err)
+      }
     }
     const handleWSClose = (): void => {
       this.emit('socket-close')
     }
+    this.disconnect = () => {
+      if (this._ws !== undefined) {
+        this._ws.onerror = debugError
+        this._ws.onmessage = noop
+        this._ws.onopen = noop
+        this._ws.close()
+        this._ws = undefined
+      }
+    }
     this.connect = () => {
       if (this._ws === undefined) {
-        this._ws = new WebSocket(webSocketUrl(format(this._url)))
+        this._ws = new WSClient()
+        this._ws.open(webSocketUrl(format(this._url)))
         this._ws.onmessage = handleWSMessage
         this._ws.onerror = handleWSError
         this._ws.onopen = handleWSOpen
         this._ws.onclose = handleWSClose
       }
-      return () => {
-        if (this._ws !== undefined) {
-          this._ws.onerror = debugError
-          this._ws.onmessage = noop
-          this._ws.onopen = noop
-          this._ws.close()
-          this._ws = undefined
-        }
-      }
+      return this.disconnect
     }
+  }
+
+  async _wsRequest (path: string, query: { [ key: string ]: string }): Promise<any> {
+    const rid = ++globalRid
+    const res = new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        finish({ error: { type: 'timeout', message: `timeout #${rid}` } })
+      }, 5000)
+      const finish = (result: { error?: any, body?: any }): void => {
+        clearTimeout(timeout)
+        delete globalRequests[rid]
+        if (result.error !== undefined) {
+          return reject(Object.assign(new Error(), result.error))
+        }
+        resolve(result.body)
+      }
+      globalRequests[rid] = finish
+    })
+    await this._ws.send(JSON.stringify({
+      type: path,
+      rid,
+      query
+    }))
+    return res
   }
 
   async _fetch (path: string, query: { [key: string]: string }): Promise<any> {
     if (this._ws !== undefined) {
       try {
-        await this._ws.send(JSON.stringify({
-          type: path,
-          query
-        }))
-        return
-      } catch (err) {}
+        return await this._wsRequest(path, query)
+      } catch (err) {
+        console.log(`Error using connection, sending using post. Error: ${err}`)
+      }
     }
     const opts = {
       ...this._url,
