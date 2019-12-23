@@ -4,7 +4,7 @@ import { createDb } from '../server/createDb'
 import Expo from 'expo-server-sdk'
 
 // Using this directly from package.json breaks the release task
-const VERSION = '0.0.8'
+const VERSION = '0.0.9'
 
 function log (obj: any): void {
   console.log(JSON.stringify({
