@@ -39,9 +39,10 @@ function isOkMessage (data: any): data is {
 export function createServer (opts: AppOptions): INotificationServer {
   const app = createApp(opts)
   const http = express()
-  const { logError } = opts
+  const { logError, log } = opts
 
   const wrapAsync = (op: (query: { [key: string]: any }) => Promise<any>) => (req: Request) => {
+    log({ via: 'http' })
     op(req.query)
       .then(data => {
         req.res.status(200).end(JSON.stringify(data))
@@ -72,21 +73,30 @@ export function createServer (opts: AppOptions): INotificationServer {
       try {
         data = JSON.parse(event.data)
       } catch (error) {
-        logError(error)
+        logError({
+          type: 'json-parse-error',
+          error
+        })
         return
       }
       if (!isOkMessage(data)) {
-        logError(Object.assign(new Error('unexpected-message-received'), { data }))
+        logError({
+          type: 'unexpected-message-received',
+          error: Object.assign(new Error(), { data })
+        })
         return
       }
       ;(async () => {
         if (data.type === 'send') {
+          log({ via: 'websocket', rid: data.rid, type: data.type, session })
           return app.send(data.query)
         }
         if (data.type === 'subscribe') {
+          log({ via: 'websocket', rid: data.rid, type: data.type, session })
           return app.subscribe(data.query, session, event.target)
         }
         if (data.type === 'unsubscribe') {
+          log({ via: 'websocket', rid: data.rid, type: data.type, session })
           return app.unsubscribe(data.query)
         }
       })()

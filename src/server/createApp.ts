@@ -204,7 +204,10 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           resolve(null)
         })
       }).catch(async (error: Error) => {
-        logError(error)
+        logError({
+          type: 'socket-error',
+          error
+        })
         return expo.sendPushNotificationsAsync([message])
       }))
 
