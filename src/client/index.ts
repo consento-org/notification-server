@@ -7,6 +7,7 @@ import urlParse from 'url-parse'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
 import { WSClient, MessageEvent, ErrorEvent, OpenEvent } from './WSClient'
+import { ICancelable, cancelable, abortCancelable } from '@consento/crypto'
 
 function webSocketUrl (webUrl: string): string {
   return webUrl.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
@@ -60,6 +61,94 @@ function isNotification (data: any): data is INotification {
 
 let globalRid = 0
 const globalRequests: { [rid: number]: (result: { error?: any, data?: any }) => void } = {}
+
+interface IRequest {
+  [key: string]: string
+  idsBase64: string
+  signaturesBase64: string
+  pushToken: string
+}
+
+// eslint-disable-next-line @typescript-eslint/promise-function-async
+function toRequest (token: Promise<string>, receivers: IReceiver[]): ICancelable<IRequest> {
+  return cancelable<IRequest>(function * () {
+    const pushToken: string = yield token
+    const idsBase64: string[] = []
+    const signaturesBase64: string[] = []
+    for (const receiver of receivers) {
+      const receiverIdBase64 = yield receiver.idBase64()
+      idsBase64.push(receiverIdBase64)
+      const pushTokenBuffer = Buffer.from(pushToken)
+      signaturesBase64.push(bufferToString(yield receiver.sign(pushTokenBuffer), 'base64'))
+    }
+    return {
+      idsBase64: idsBase64.join(';'),
+      signaturesBase64: signaturesBase64.join(';'),
+      pushToken
+    }
+  })
+}
+
+// eslint-disable-next-line @typescript-eslint/promise-function-async
+function fetchHttp (url: IURLParts, path: string, query: { [key: string]: string }): ICancelable<string> {
+  return abortCancelable<string>(async (signal: AbortSignal) => {
+    const opts = {
+      ...url,
+      pathname: `${url.pathname}${path}`,
+      query
+    }
+    return fetch(format(opts), {
+      method: 'POST',
+      signal
+    }).then(async res => {
+      const text = await res.text()
+      if (res.status !== 200) {
+        throw new Error(`HTTP Request failed[${res.status}] → ${text}
+  ${JSON.stringify(opts, null, 2)}`)
+      }
+      return text
+    })
+  })
+}
+
+async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: string }): Promise<string> {
+  const rid = ++globalRid
+  const res = new Promise<any>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      finish({ error: { type: 'timeout', message: `timeout #${rid}` } })
+    }, 5000)
+    const finish = (result: { error?: any, body?: any }): void => {
+      clearTimeout(timeout)
+      delete globalRequests[rid]
+      if (result.error !== undefined) {
+        return reject(Object.assign(new Error(), result.error))
+      }
+      resolve(String(result.body))
+    }
+    globalRequests[rid] = finish
+  })
+  await ws.send(JSON.stringify({
+    type: path,
+    rid,
+    query
+  }))
+  return res
+}
+
+// eslint-disable-next-line @typescript-eslint/promise-function-async
+async function _fetch (url: IURLParts, ws: WSClient | undefined, path: string, query: { [key: string]: string }): Promise<string> {
+  return cancelable <string>(function * (child) {
+    if (ws !== undefined) {
+      const result = yield ((wsRequest(ws, path, query) as ICancelable<string>).catch(error => {
+        console.log(`Error using connection, sending using post. Error: ${error}`)
+      }))
+      if (result !== undefined) {
+        return result
+      }
+    }
+    return child(fetchHttp(url, path, query))
+  })
+}
 
 export class ExpoTransport extends EventEmitter implements INotificationsTransport {
   _pushToken: Promise<string>
@@ -120,7 +209,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
         return
       }
       try {
-        await this._wsRequest('subscribe', await this._toRequest(this._subscriptions))
+        await wsRequest(this._ws, 'subscribe', await toRequest(this.token, this._subscriptions))
       } catch (err) {
         this.emit('error', err)
       }
@@ -150,54 +239,6 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     }
   }
 
-  async _wsRequest (path: string, query: { [ key: string ]: string }): Promise<any> {
-    const rid = ++globalRid
-    const res = new Promise<any>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        finish({ error: { type: 'timeout', message: `timeout #${rid}` } })
-      }, 5000)
-      const finish = (result: { error?: any, body?: any }): void => {
-        clearTimeout(timeout)
-        delete globalRequests[rid]
-        if (result.error !== undefined) {
-          return reject(Object.assign(new Error(), result.error))
-        }
-        resolve(result.body)
-      }
-      globalRequests[rid] = finish
-    })
-    await this._ws.send(JSON.stringify({
-      type: path,
-      rid,
-      query
-    }))
-    return res
-  }
-
-  async _fetch (path: string, query: { [key: string]: string }): Promise<any> {
-    if (this._ws !== undefined) {
-      try {
-        return await this._wsRequest(path, query)
-      } catch (err) {
-        console.log(`Error using connection, sending using post. Error: ${err}`)
-      }
-    }
-    const opts = {
-      ...this._url,
-      pathname: `${this._url.pathname}${path}`,
-      query
-    }
-    const res = await fetch(format(opts as any), {
-      method: 'POST'
-    })
-
-    if (res.status !== 200) {
-      throw new Error(`HTTP Request failed[${res.status}] → ${await res.text()}
-${JSON.stringify(opts, null, 2)}`)
-    }
-    return res
-  }
-
   get token (): Promise<string> {
     if (this._pushToken === undefined) {
       this._pushToken = this._getToken()
@@ -205,69 +246,65 @@ ${JSON.stringify(opts, null, 2)}`)
     return this._pushToken
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async _toRequest (receivers: IReceiver[]): Promise<{
-    idsBase64: string
-    signaturesBase64: string
-    pushToken: string
-  }> {
-    const pushTokenPromise = this.token
-    const [idsBase64, signaturesBase64, pushToken] = await Promise.all([
-      Promise.all(receivers.map(channel => channel.idBase64())),
-      pushTokenPromise.then(async pushToken => {
-        const pushTokenBuffer = Buffer.from(pushToken)
-        return Promise.all(receivers.map(async channel => bufferToString(await channel.sign(pushTokenBuffer), 'base64')))
-      }) as any as Promise<string[]>,
-      pushTokenPromise
-    ])
-
-    return {
-      idsBase64: idsBase64.join(';'),
-      signaturesBase64: signaturesBase64.join(';'),
-      pushToken
-    }
+  // eslint-disable-next-line @typescript-eslint/promise-function-async
+  unsubscribe (receivers: IReceiver[]): ICancelable<boolean> {
+    const url = this._url
+    const ws = this._ws
+    const token = this.token
+    return cancelable(
+      function * (child) {
+        const opts = yield child(toRequest(token, receivers))
+        return yield _fetch(url, ws, 'unsubscribe', opts)
+      }
+    ).then(
+      () => {
+        for (const receiver of receivers) {
+          const pos = this._subscriptions.indexOf(receiver)
+          if (pos !== -1) {
+            this._subscriptions.splice(pos, 1)
+          }
+        }
+        return true
+      },
+      (error: Error) => {
+        this.emit('error', error)
+        return false
+      }
+    )
   }
 
-  async unsubscribe (receivers: IReceiver[]): Promise<boolean> {
-    try {
-      const opts = await this._toRequest(receivers)
-      await this._fetch('unsubscribe', opts)
-    } catch (err) {
-      this.emit('error', err)
-      return false
-    }
-    for (const receiver of receivers) {
-      const pos = this._subscriptions.indexOf(receiver)
-      if (pos !== -1) {
-        this._subscriptions.splice(pos, 1)
+  // eslint-disable-next-line @typescript-eslint/promise-function-async
+  subscribe (receivers: IReceiver[]): ICancelable<boolean> {
+    const url = this._url
+    const ws = this._ws
+    const token = this.token
+    return cancelable<boolean, this>(
+      function * (child) {
+        const opts = yield child(toRequest(token, receivers))
+        yield _fetch(url, ws, 'subscribe', opts)
       }
-    }
-    return true
-  }
-
-  async subscribe (receivers: IReceiver[]): Promise<boolean> {
-    try {
-      const opts = await this._toRequest(receivers)
-      await this._fetch('subscribe', opts)
-    } catch (err) {
-      this.emit('error', err)
-      return false
-    }
-    for (const receiver of receivers) {
-      if (this._subscriptions.indexOf(receiver) === -1) {
-        this._subscriptions.push(receiver)
+    ).then(
+      () => {
+        for (const receiver of receivers) {
+          if (this._subscriptions.indexOf(receiver) === -1) {
+            this._subscriptions.push(receiver)
+          }
+        }
+        return true
+      },
+      (error: Error) => {
+        this.emit('error', error)
+        return false
       }
-    }
-    return true
+    )
   }
 
   async send (channel: IAnnonymous, message: IEncryptedMessage): Promise<string[]> {
-    const data = {
+    await _fetch(this._url, this._ws, 'send', {
       idBase64: await channel.idBase64(),
       bodyBase64: bufferToString(message.body, 'base64'),
       signatureBase64: bufferToString(message.signature, 'base64')
-    }
-    await this._fetch('send', data)
+    } as any)
     return []
   }
 }
