@@ -53,6 +53,7 @@ export function createServer (opts: AppOptions): INotificationServer {
         } else {
           logError({
             type: 'http-error',
+            query: req.query,
             error
           })
           req.res.status(500).send('Error.')
