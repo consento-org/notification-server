@@ -2,7 +2,7 @@ export interface IExpoNotificationParts {
   data: any
 }
 
-export type IGetExpoToken = () => PromiseLike<string>
+export type IGetExpoToken = () => Promise<string>
 
 export interface IExpoTransportOptions {
   address: string

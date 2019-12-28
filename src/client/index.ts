@@ -62,7 +62,7 @@ let globalRid = 0
 const globalRequests: { [rid: number]: (result: { error?: any, data?: any }) => void } = {}
 
 export class ExpoTransport extends EventEmitter implements INotificationsTransport {
-  _pushToken: PromiseLike<string>
+  _pushToken: Promise<string>
   _url: IURLParts
   _getToken: IGetExpoToken
   _subscriptions: IReceiver[]
@@ -198,7 +198,7 @@ ${JSON.stringify(opts, null, 2)}`)
     return res
   }
 
-  get token (): PromiseLike<string> {
+  get token (): Promise<string> {
     if (this._pushToken === undefined) {
       this._pushToken = this._getToken()
     }
