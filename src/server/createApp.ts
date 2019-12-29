@@ -259,11 +259,11 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           }
         }
       }
-      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb))
+      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
     async unsubscribe (query: any): Promise<boolean[]> {
       const entries = await processTokens(log, query)
-      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.subscribe(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), cb))
+      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
     closeSocket (session: string): boolean {
       const info = webSocketsBySession[session]
