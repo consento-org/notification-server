@@ -141,18 +141,18 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
       const channelPath = `/channel/${idHex}/${pushTokenHex}`
       const lock = getLock(channelPath)
       lock(cb => {
-        _db.get(channelPath, (error: Error, data: HyperDbNode[]) => {
+        db.get(channelPath, (error: Error, data: HyperDbNode[]) => {
           if (exists(error)) return cb(error) // Error is passed on
           if (!(0 in data)) return cb(null, false) // Already deleted
           const tokenPath = `/tokens/${pushTokenHex}`
           const tokenLock = getLock(tokenPath)
-          tokenLock(tokenCb => _db.get(tokenPath, (error: Error, countRaw: HyperDbNode[]) => {
+          tokenLock(tokenCb => db.get(tokenPath, (error: Error, countRaw: HyperDbNode[]) => {
             if (exists(error)) return tokenCb(error)
             let count = (0 in countRaw) ? countRaw[0].value : 0
-            _db.del(channelPath, (error: Error) => {
+            db.del(channelPath, (error: Error) => {
               if (exists(error)) return tokenCb(error)
               count -= 1
-              _db.put(tokenPath, count, (error: Error) => {
+              db.put(tokenPath, count, (error: Error) => {
                 log({
                   count: {
                     pushToken,
