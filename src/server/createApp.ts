@@ -45,10 +45,10 @@ function _asyncSeries<Entry, Result> (
 
 export interface IProcessedToken {
   pushToken: string
-  idBase64: string
+  idsBase64: string[]
 }
 
-async function processTokens (log: (msg: any) => void, query: { [key: string]: any }): Promise<IProcessedToken[]> {
+async function processTokens (log: (msg: any) => void, query: { [key: string]: any }): Promise<IProcessedToken> {
   const { pushToken, idsBase64: idsBase64Raw, signaturesBase64: signaturesBase64Raw } = query
   if (!Expo.isExpoPushToken(pushToken)) {
     log({ invalidRequest: { invalidPushToken: pushToken } })
@@ -59,23 +59,18 @@ async function processTokens (log: (msg: any) => void, query: { [key: string]: a
   const signaturesBase64 = signaturesBase64Raw !== undefined ? signaturesBase64Raw.split(';') : []
   const pushTokenBuffer = Buffer.from(pushToken)
   let index = 0
-  const processedTokens = []
+  if (idsBase64.length !== signaturesBase64.length) {
+    throw Object.assign(new Error(`unequal-amount-of-signatures[${idsBase64.length} != ${signaturesBase64.length}]`), { httpCode: 400 })
+  }
   for (const idBase64 of idsBase64) {
-    if (index >= signaturesBase64.length) {
-      return []
-    }
     const signature = signaturesBase64[index]
     if (!await sodium.verify(Buffer.from(idBase64, 'base64'), Buffer.from(signature, 'base64'), pushTokenBuffer)) {
       log({ invalidRequest: { invalidSignature: index } })
       throw Object.assign(new Error(`invalid-signature[${index}]`), { httpCode: 400 })
     }
-    processedTokens.push({
-      pushToken,
-      idBase64
-    })
     index += 1
   }
-  return processedTokens
+  return { pushToken, idsBase64 }
 }
 
 export interface AppOptions {
@@ -248,22 +243,16 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
 
   return {
     async subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]> {
-      const entries = await processTokens(log, query)
+      const { pushToken, idsBase64 } = await processTokens(log, query)
       if (socket !== undefined) {
-        const foundTokens = new Set<string>()
-        for (const entry of entries) {
-          if (!foundTokens.has(entry.pushToken)) {
-            foundTokens.add(entry.pushToken)
-            log({ registerWebSocket: { session, pushToken: entry.pushToken } })
-            registerSocket(entry.pushToken, session, socket)
-          }
-        }
+        log({ registerWebSocket: { session, pushToken } })
+        registerSocket(pushToken, session, socket)
       }
-      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
+      return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
     async unsubscribe (query: any): Promise<boolean[]> {
-      const entries = await processTokens(log, query)
-      return asyncSeries <IProcessedToken, boolean>(entries, ({ pushToken, idBase64 }, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
+      const { pushToken, idsBase64 } = await processTokens(log, query)
+      return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
     closeSocket (session: string): boolean {
       const info = webSocketsBySession[session]
