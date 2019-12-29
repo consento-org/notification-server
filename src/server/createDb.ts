@@ -80,106 +80,147 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
     }
     return lock
   }
+  function DBSet (setPath: string, countPath: string, max: number): {
+    add (targetHex: string, entryHex: string, cb: (error: Error, added?: boolean) => void): void
+    remove (targetHex: string, entryHex: string, cb: (error: Error, removed?: boolean) => void): void
+    list (targetHex: string, cb: (error: Error, sourceEntries?: string[]) => void): void
+  } {
+    return {
+      add (targetHex: string, entryHex: string, mainCb: (error: Error, added?: boolean) => void) {
+        getDb((error: Error, db: HyperDb<string, number>) => {
+          if (exists(error)) {
+            return mainCb(error)
+          }
+          log({
+            add: {
+              setPath,
+              countPath,
+              targetHex,
+              entryHex
+            }
+          })
+          const targetPath = `/${setPath}/${targetHex}/${entryHex}`
+          const lock = getLock(targetPath)
+          lock(cb => {
+            db.get(targetPath, (error: Error, data: HyperDbNode[]) => {
+              if (exists(error)) return cb(error) // Error is passed on
+              if (0 in data) return cb(null, false) // Already added
+              if (max === 0) {
+                return db.put(targetPath, 1, (error: Error) => {
+                  if (exists(error)) return cb(error)
+                  cb(null, true)
+                })
+              }
+              const entryUseCountPath = `/${countPath}/${entryHex}`
+              const entryUseCountLock = getLock(entryUseCountPath)
+              entryUseCountLock(countLockCb => db.get(entryUseCountPath, (error: Error, countRaw: HyperDbNode[]) => {
+                if (exists(error)) return countLockCb(error)
+                let count = (0 in countRaw) ? countRaw[0].value : 0
+                if (count > max) {
+                  return countLockCb(new Error(`Too many relations: ${setPath} ← ${countPath}[${entryHex}]`))
+                }
+                db.put(targetPath, 1, (error: Error) => {
+                  if (exists(error)) return countLockCb(error)
+                  count += 1
+                  db.put(entryUseCountPath, count, (error: Error) => {
+                    if (exists(error)) return countLockCb(error)
+                    log({
+                      count: {
+                        countPath,
+                        targetHex,
+                        count
+                      }
+                    })
+                    countLockCb(error, true)
+                  }) // TODO: on error: reduce relations.
+                })
+              }), cb)
+            })
+          }, mainCb)
+        })
+      },
+      remove (targetHex: string, entryHex: string, mainCb: (error: Error, removed?: boolean) => void) {
+        getDb((error: Error, db: HyperDb<string, number>) => {
+          if (exists(error)) {
+            return mainCb(error)
+          }
+          log({
+            remove: {
+              setPath,
+              countPath,
+              targetHex,
+              entryHex
+            }
+          })
+          const targetPath = `/${setPath}/${targetHex}/${entryHex}`
+          const lock = getLock(targetPath)
+          lock(cb => {
+            db.get(targetPath, (error: Error, data: HyperDbNode[]) => {
+              if (exists(error)) return cb(error) // Error is passed on
+              if (!(0 in data)) return cb(null, false) // Already deleted
+              if (max === 0) {
+                return db.del(targetPath, (error: Error) => {
+                  if (exists(error)) return cb(error)
+                  cb(null, true)
+                })
+              }
+              const entryUseCountPath = `/${countPath}/${entryHex}`
+              const entryUseCountLock = getLock(entryUseCountPath)
+              entryUseCountLock(tokenCb => db.get(entryUseCountPath, (error: Error, countRaw: HyperDbNode[]) => {
+                if (exists(error)) return tokenCb(error)
+                let count = (0 in countRaw) ? countRaw[0].value : 0
+                db.del(targetPath, (error: Error) => {
+                  if (exists(error)) return tokenCb(error)
+                  count -= 1
+                  db.put(entryUseCountPath, count, (error: Error) => {
+                    log({
+                      count: {
+                        countPath,
+                        targetHex,
+                        count
+                      }
+                    })
+                    tokenCb(error, true)
+                  }) // TODO: on error: reduce subscriptions.
+                })
+              }), cb)
+            })
+          }, mainCb)
+        })
+      },
+      list (idHex: string, cb: (error: Error, pushTokensHex: string[]) => void) {
+        getDb((error: Error, db: HyperDb<string, number>) => {
+          if (exists(error)) return cb(error, null)
+          const prefix = `${setPath}/${idHex}/`
+          db.list(prefix, (error: Error, data: HyperDbNode[][]) => {
+            if (exists(error)) return cb(error, null)
+            cb(null, flatten(data).map(node => node.key.substr(prefix.length)))
+          })
+        })
+      }
+    }
+  }
+
+  const subscriptions = DBSet('channels', 'tokens', maxSubscriptions)
 
   function subscribe (pushToken: string, idHex: string, mainCb: (error: Error, success?: boolean) => void): void {
-    getDb((error: Error, db: HyperDb<string, number>) => {
-      if (exists(error)) {
-        return mainCb(error)
-      }
-      log({
-        subscribe: {
-          pushToken,
-          idHex
-        }
-      })
-      const pushTokenHex = Buffer.from(pushToken).toString('hex')
-      const channelPath = `/channel/${idHex}/${pushTokenHex}`
-      const lock = getLock(channelPath)
-      lock(cb => {
-        db.get(channelPath, (error: Error, data: HyperDbNode[]) => {
-          if (exists(error)) return cb(error) // Error is passed on
-          if (0 in data) return cb(null, false) // Already added
-          const tokenPath = `/tokens/${pushTokenHex}`
-          const tokenLock = getLock(tokenPath)
-          tokenLock(tokenCb => db.get(tokenPath, (error: Error, countRaw: HyperDbNode[]) => {
-            if (exists(error)) return tokenCb(error)
-            let count = (0 in countRaw) ? countRaw[0].value : 0
-            if (count > maxSubscriptions) {
-              return tokenCb(new Error('Too many subscriptions'))
-            }
-            db.put(channelPath, 1, (error: Error) => {
-              if (exists(error)) return tokenCb(error)
-              count += 1
-              db.put(tokenPath, count, (error: Error) => {
-                log({
-                  count: {
-                    pushToken,
-                    count
-                  }
-                })
-                tokenCb(error, true)
-              }) // TODO: on error: reduce subscriptions.
-            })
-          }), cb)
-        })
-      }, mainCb)
-    })
+    const pushTokenHex = Buffer.from(pushToken).toString('hex')
+    subscriptions.add(idHex, pushTokenHex, mainCb)
   }
 
   function unsubscribe (pushToken: string, idHex: string, mainCb: (err: Error, success?: boolean) => void): void {
-    getDb((error: Error, db: HyperDb<string, number>) => {
-      if (exists(error)) {
-        return mainCb(error)
-      }
-      log({
-        unsubscribe: {
-          pushToken,
-          idHex
-        }
-      })
-      const pushTokenHex = Buffer.from(pushToken).toString('hex')
-      const channelPath = `/channel/${idHex}/${pushTokenHex}`
-      const lock = getLock(channelPath)
-      lock(cb => {
-        db.get(channelPath, (error: Error, data: HyperDbNode[]) => {
-          if (exists(error)) return cb(error) // Error is passed on
-          if (!(0 in data)) return cb(null, false) // Already deleted
-          const tokenPath = `/tokens/${pushTokenHex}`
-          const tokenLock = getLock(tokenPath)
-          tokenLock(tokenCb => db.get(tokenPath, (error: Error, countRaw: HyperDbNode[]) => {
-            if (exists(error)) return tokenCb(error)
-            let count = (0 in countRaw) ? countRaw[0].value : 0
-            db.del(channelPath, (error: Error) => {
-              if (exists(error)) return tokenCb(error)
-              count -= 1
-              db.put(tokenPath, count, (error: Error) => {
-                log({
-                  count: {
-                    pushToken,
-                    count
-                  }
-                })
-                tokenCb(error, true)
-              }) // TODO: on error: reduce subscriptions.
-            })
-          }), cb)
-        })
-      }, mainCb)
-    })
+    const pushTokenHex = Buffer.from(pushToken).toString('hex')
+    subscriptions.remove(idHex, pushTokenHex, mainCb)
   }
 
   return {
     subscribe,
     unsubscribe,
     reset,
-    list (idHex: string, cb: (error: Error, idHexTokens: string[]) => void) {
-      getDb((error: Error, db: HyperDb<string, number>) => {
-        if (exists(error)) return cb(error, null)
-        const prefix = `channel/${idHex}/`
-        _db.list(prefix, (error: Error, data: HyperDbNode[][]) => {
-          if (exists(error)) return cb(error, null)
-          cb(null, flatten(data).map(node => Buffer.from(node.key.substr(prefix.length), 'hex').toString()))
-        })
+    list (idHex: string, cb: (error: Error, pushTokens?: string[]) => void) {
+      subscriptions.list(idHex, (error: Error, pushTokensHex: string[]) => {
+        if (exists(error)) return cb(error)
+        cb(null, pushTokensHex.map(pushTokenHex => Buffer.from(pushTokenHex, 'hex').toString()))
       })
     }
   }

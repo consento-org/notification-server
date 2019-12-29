@@ -14,8 +14,8 @@ describe('database operations', () => {
       count: 0
     }
     const log = (any: any): void => {
-      if ('subscribe' in any) counts.subscribe += 1
-      if ('unsubscribe' in any) counts.unsubscribe += 1
+      if ('add' in any) counts.subscribe += 1
+      if ('remove' in any) counts.unsubscribe += 1
       if ('count' in any) counts.count += 1
     }
     const db = createDb({
