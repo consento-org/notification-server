@@ -45,7 +45,7 @@ export function createServer (opts: AppOptions): INotificationServer {
     log({ via: 'http' })
     op(req.query)
       .then(data => {
-        req.res.status(200).end(JSON.stringify(data))
+        req.res.status(200).send(JSON.stringify(data)).end()
       })
       .catch(error => {
         if (error.httpCode !== undefined) {
@@ -63,6 +63,7 @@ export function createServer (opts: AppOptions): INotificationServer {
   http.post('/send', wrapAsync(app.send))
   http.post('/subscribe', wrapAsync(app.subscribe))
   http.post('/unsubscribe', wrapAsync(app.unsubscribe))
+  http.post('/reset', wrapAsync(app.reset))
 
   function handleConnection (socket: WebSocket): void {
     const session = randomBytes(32).toString('hex')
@@ -99,6 +100,10 @@ export function createServer (opts: AppOptions): INotificationServer {
         if (data.type === 'unsubscribe') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
           return app.unsubscribe(data.query)
+        }
+        if (data.type === 'reset') {
+          log({ via: 'websocket', rid: data.rid, type: data.type, session })
+          return app.reset(data.query)
         }
       })()
         .then(

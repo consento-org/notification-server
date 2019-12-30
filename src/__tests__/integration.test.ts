@@ -1,7 +1,7 @@
 import { setup, IEncodable } from '@consento/crypto'
 import { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
-import { Notifications } from '@consento/api/notifications'
+import { Notifications, isSuccess } from '@consento/api/notifications'
 import { ExpoTransport } from '../client'
 import { createDummyExpoToken } from '../server/__tests__/token-dummy'
 import { EventEmitter } from 'events'
@@ -14,8 +14,10 @@ import { exists } from '../util/exists'
 
 const { Sender } = setup(sodium)
 
+const wait = async (time: number): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, time))
+
 describe('working api integration', () => {
-  it('subscribe → submit → unsubscribe → submit', cb => {
+  it('subscribe → submit → unsubscribe → submit → reset → submit', cb => {
     try {
       mkdirSync('.tmp')
     } catch (err) {}
@@ -68,27 +70,44 @@ describe('working api integration', () => {
               return createDummyExpoToken()
             }
           }
-          const sender = Sender.create()
-          const receiver = sender.newReceiver()
+          const senderA = Sender.create()
+          const receiverA = senderA.newReceiver()
+          const senderB = Sender.create()
+          const receiverB = senderB.newReceiver()
           const message = 'Hello World'
           const transport = new ExpoTransport(opts)
           notificationsMock.addListener('message', transport.handleNotification)
           const client = new Notifications({ transport })
           transport.on('error', fail)
-          const { promise: receive } = await client.receive(receiver)
-          await Promise.all([
-            client.send(sender, message),
+          const { afterSubscribe: receive } = await client.receive(receiverA)
+          await Promise.all<any>([
+            client.send(senderA, message),
             receive.then((receivedMessage: IEncodable) => {
               expect(receivedMessage).toBe(message)
             })
           ])
-          await client.subscribe([receiver])
-          // AppState.currentState = 'active'
+          expect(await receive)
+          expect(await client.subscribe([receiverA, receiverB])).toEqual([true, true])
           const directMessage = 'Ping Pong'
           const close = transport.connect()
-          const { promise: receiveThroughSocket } = await client.receive(receiver)
-          await client.send(sender, directMessage)
+          const { afterSubscribe: receiveThroughSocket } = await client.receive(receiverA)
+          await client.send(senderA, directMessage)
           expect(await receiveThroughSocket).toBe(directMessage)
+          expect(await client.unsubscribe([receiverA])).toEqual([false]) // the receiving of the message should have already unsubscribed receiverA
+          expect(await client.reset([receiverA])).toEqual([true])
+          let messageReceived = false
+          client.processors.add((message) => {
+            messageReceived = true
+            if (isSuccess(message)) {
+              expect(message.body).toBe('Post A')
+            } else {
+              fail(message)
+            }
+          })
+          expect(await client.send(senderA, 'Post A')).toEqual(['ws::pass-through'])
+          expect(await client.send(senderB, 'Post B')).toEqual([])
+          await wait(10)
+          expect(messageReceived).toBe(true)
           close()
         })().then(cb)
       })

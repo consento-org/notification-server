@@ -19,7 +19,7 @@
   "author": "Martin Heidegger <martin.heidegger@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@consento/api": "0.0.11",
+    "@consento/api": "0.0.14",
     "@consento/crypto": "0.0.8",
     "cross-fetch": "^3.0.4",
     "events": "^3.0.0",
@@ -85,7 +85,7 @@
     "tape": "^4.12.1",
     "ts-jest": "^24.2.0",
     "ts-node": "^8.5.4",
-    "typescript": "^3.7.4"
+    "typescript": "^3.7.3"
   },
   "repository": {
     "type": "git",

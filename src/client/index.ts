@@ -1,13 +1,12 @@
 import { EventEmitter } from 'events'
-import { IEncryptedMessage, IAnnonymous, IReceiver } from '@consento/api'
 import { INotificationsTransport } from '@consento/api/notifications/types'
+import { IEncryptedMessage, IAnnonymous, IReceiver, ICancelable, cancelable, abortCancelable } from '@consento/api'
 import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
 import { format } from 'url'
 import urlParse from 'url-parse'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import fetch from 'cross-fetch'
 import { WSClient, MessageEvent, ErrorEvent, OpenEvent } from './WSClient'
-import { ICancelable, cancelable, abortCancelable } from '@consento/crypto'
 
 function webSocketUrl (webUrl: string): string {
   return webUrl.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
@@ -70,7 +69,7 @@ interface IRequest {
 }
 
 // eslint-disable-next-line @typescript-eslint/promise-function-async
-function toRequest (token: Promise<string>, receivers: IReceiver[]): ICancelable<IRequest> {
+function toRequest (token: Promise<string>, receivers: Iterable<IReceiver>): ICancelable<IRequest> {
   return cancelable<IRequest>(function * () {
     const pushToken: string = yield token
     const idsBase64: string[] = []
@@ -106,7 +105,13 @@ function fetchHttp (url: IURLParts, path: string, query: { [key: string]: string
         throw new Error(`HTTP Request failed[${res.status}] → ${text}
   ${JSON.stringify(opts, null, 2)}`)
       }
-      return text
+      try {
+        const data = JSON.parse(text)
+        return data
+      } catch (err) {
+        throw new Error(`HTTP Response not valid JSON.
+  ${text}`)
+      }
     })
   })
 }
@@ -123,7 +128,7 @@ async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: 
       if (result.error !== undefined) {
         return reject(Object.assign(new Error(), result.error))
       }
-      resolve(String(result.body))
+      resolve(result.body)
     }
     globalRequests[rid] = finish
   })
@@ -146,7 +151,7 @@ async function _fetch (url: IURLParts, ws: WSClient | undefined, path: string, q
         return result
       }
     }
-    return child(fetchHttp(url, path, query))
+    return yield child(fetchHttp(url, path, query))
   })
 }
 
@@ -154,7 +159,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   _pushToken: Promise<string>
   _url: IURLParts
   _getToken: IGetExpoToken
-  _subscriptions: IReceiver[]
+  _subscriptions: Set<IReceiver>
   _ws: WSClient
   handleNotification: (notification: IExpoNotificationParts) => void
   connect: () => () => void
@@ -164,7 +169,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     super()
     this._url = getURLParts(address)
     this._getToken = getToken
-    this._subscriptions = []
+    this._subscriptions = new Set()
     const processInput = (data: any): void => {
       if (isNotification(data)) {
         this.emit('message', data.idBase64, {
@@ -205,7 +210,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     }
     const handleWSOpen = async (_: OpenEvent): Promise<void> => {
       this.emit('socket-open')
-      if (this._subscriptions.length === 0) {
+      if (this._subscriptions.size === 0) {
         return
       }
       try {
@@ -247,64 +252,92 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   }
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
-  unsubscribe (receivers: IReceiver[]): ICancelable<boolean> {
+  unsubscribe (receivers: IReceiver[]): ICancelable<boolean[]> {
+    if (receivers.length === 0) {
+      return cancelable(function * () {
+        return []
+      })
+    }
     const url = this._url
     const ws = this._ws
     const token = this.token
-    return cancelable(
+    return cancelable<boolean[]>(
       function * (child) {
         const opts = yield child(toRequest(token, receivers))
         return yield _fetch(url, ws, 'unsubscribe', opts)
       }
     ).then(
-      () => {
+      (result: boolean[]) => {
         for (const receiver of receivers) {
-          const pos = this._subscriptions.indexOf(receiver)
-          if (pos !== -1) {
-            this._subscriptions.splice(pos, 1)
-          }
+          this._subscriptions.delete(receiver)
         }
-        return true
+        return result
       },
       (error: Error) => {
         this.emit('error', error)
-        return false
+        return receivers.map(() => false)
       }
     )
   }
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
-  subscribe (receivers: IReceiver[]): ICancelable<boolean> {
+  subscribe (receivers: IReceiver[]): ICancelable<boolean[]> {
+    if (receivers.length === 0) {
+      return cancelable(function * () {
+        return []
+      })
+    }
     const url = this._url
     const ws = this._ws
     const token = this.token
-    return cancelable<boolean, this>(
+    return cancelable<boolean[]>(
       function * (child) {
         const opts = yield child(toRequest(token, receivers))
-        yield _fetch(url, ws, 'subscribe', opts)
+        return yield _fetch(url, ws, 'subscribe', opts)
       }
     ).then(
-      () => {
+      (result: boolean[]) => {
         for (const receiver of receivers) {
-          if (this._subscriptions.indexOf(receiver) === -1) {
-            this._subscriptions.push(receiver)
-          }
+          this._subscriptions.add(receiver)
         }
-        return true
+        return result
       },
       (error: Error) => {
         this.emit('error', error)
-        return false
+        return receivers.map(() => false)
+      }
+    )
+  }
+
+  // eslint-disable-next-line @typescript-eslint/promise-function-async
+  reset (receivers: IReceiver[]): ICancelable<boolean[]> {
+    const url = this._url
+    const ws = this._ws
+    const token = this.token
+    return cancelable<boolean[]>(
+      function * (child) {
+        const opts = yield child(toRequest(token, receivers))
+        return yield _fetch(url, ws, 'reset', opts)
+      }
+    ).then(
+      (result: boolean[]) => {
+        for (const receiver of receivers) {
+          this._subscriptions.add(receiver)
+        }
+        return result
+      },
+      (error: Error) => {
+        this.emit('error', error)
+        return receivers.map(() => false)
       }
     )
   }
 
   async send (channel: IAnnonymous, message: IEncryptedMessage): Promise<string[]> {
-    await _fetch(this._url, this._ws, 'send', {
+    return _fetch(this._url, this._ws, 'send', {
       idBase64: await channel.idBase64(),
       bodyBase64: bufferToString(message.body, 'base64'),
       signatureBase64: bufferToString(message.signature, 'base64')
-    } as any)
-    return []
+    } as any) as any
   }
 }

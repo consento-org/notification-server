@@ -4,6 +4,7 @@ import { sodium } from '@consento/crypto/core/sodium'
 import { IEncryptedMessage } from '@consento/crypto/core/types'
 import { DB } from './createDb'
 import WebSocket from 'ws'
+import { exists } from '../util/exists'
 
 async function verifyRequest (idBase64: string, message: IEncryptedMessage): Promise<boolean> {
   const id = Buffer.from(idBase64, 'base64')
@@ -15,9 +16,16 @@ async function verifyRequest (idBase64: string, message: IEncryptedMessage): Pro
 
 async function asyncSeries<Entry, Result> (
   entries: Entry[],
-  op: (entry: Entry, cb: (error: Error | null, result: Result) => void) => void
+  op: (entry: Entry, cb: (error: Error | null, result?: Result) => void) => void
 ): Promise<Result[]> {
   return new Promise <Result[]>((resolve, reject) => _asyncSeries(entries, op, resolve, reject, []))
+}
+
+function toMap (list: string[]): { [entry: string]: boolean } {
+  return list.reduce((result: { [entry: string]: boolean }, entry) => {
+    result[entry] = true
+    return result
+  }, {})
 }
 
 function _asyncSeries<Entry, Result> (
@@ -54,7 +62,6 @@ async function processTokens (log: (msg: any) => void, query: { [key: string]: a
     log({ invalidRequest: { invalidPushToken: pushToken } })
     throw Object.assign(new Error('invalid-push-token'), { httpCode: 400 })
   }
-
   const idsBase64 = idsBase64Raw !== undefined ? idsBase64Raw.split(';') : []
   const signaturesBase64 = signaturesBase64Raw !== undefined ? signaturesBase64Raw.split(';') : []
   const pushTokenBuffer = Buffer.from(pushToken)
@@ -97,6 +104,7 @@ export interface EncryptedMessageBase64 {
 export interface IApp {
   subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]>
   unsubscribe (query: any): Promise<boolean[]>
+  reset (query: any): Promise<boolean[]>
   send (query: any): Promise<string[]>
   closeSocket (session: string): boolean
 }
@@ -128,7 +136,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   const webSocketsBySession: { [session: string]: IWebSocketSession } = {}
 
   async function sendMessage (idBase64: string, message: EncryptedMessageBase64): Promise<string[]> {
-    const rid = randomBytes(8)
+    const messageId = randomBytes(8).toString('hex')
     const idHex = Buffer.from(idBase64, 'base64').toString('hex')
 
     const pushTokensHex = await new Promise <string[]>((resolve, reject) => db.list(idHex, (error: Error, pushTokensHex: string[]) => {
@@ -157,21 +165,14 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       .chunkPushNotifications(expoMessages)
       .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
         try {
-          log({
-            send: {
-              idHex,
-              message,
-              rid: rid.toString('hex'),
-              via: 'expo-push'
-            }
-          })
           return await expo.sendPushNotificationsAsync(messagesChunk)
         } catch (error) {
           logError({
             type: 'send-error',
             target: messages.map(message => message.to),
-            rid,
-            error
+            messageId,
+            error: `${error.message}
+  ${error.stack}`
           })
           return null
         }
@@ -185,7 +186,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           send: {
             idHex,
             message,
-            rid: rid.toString('hex'),
+            messageId,
             via: 'websocket'
           }
         })
@@ -196,7 +197,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           if (error !== null && error !== undefined) {
             return reject(error)
           }
-          resolve(null)
+          resolve([{ status: 'ok', id: 'ws::pass-through' }])
         })
       }).catch(async (error: Error) => {
         logError({
@@ -250,9 +251,40 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       }
       return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
+    async reset (query: any): Promise<boolean[]> {
+      const { pushToken, idsBase64: channelsToSubscribeBase64 } = await processTokens(log, query)
+
+      const subscribedChannelsHex = await (new Promise<string[]>((resolve, reject) => {
+        db.channelsByToken(pushToken, (error, idsHex) => (error !== null) ? reject(error) : resolve(idsHex))
+      }))
+
+      const requestedChannelsHex = channelsToSubscribeBase64.map(channelToSubscribe => Buffer.from(channelToSubscribe, 'base64').toString('hex'))
+      const requestedChannelsHexLookup = toMap(requestedChannelsHex)
+      const channelsToUnsubscribeHex = []
+      const channelsToSubscribeHexLookup = toMap(requestedChannelsHex)
+      const resultMap: { [idHex: string]: boolean } = {}
+
+      for (const subscribedChannelHex of subscribedChannelsHex) {
+        if (requestedChannelsHexLookup[subscribedChannelHex]) {
+          delete channelsToSubscribeHexLookup[subscribedChannelHex]
+          resultMap[subscribedChannelHex] = true
+        } else {
+          channelsToUnsubscribeHex.push(subscribedChannelHex)
+        }
+      }
+
+      await asyncSeries <string, boolean>(channelsToUnsubscribeHex, (idHex, cb) => db.toggleSubscription(pushToken, idHex, false, cb))
+      await asyncSeries <string, boolean>(Object.keys(channelsToSubscribeHexLookup), (idHex, cb) => db.toggleSubscription(pushToken, idHex, true, (error: Error, success?: boolean) => {
+        if (exists(error)) return cb(error, success)
+        resultMap[idHex] = success
+        cb(null, success)
+      }))
+
+      return requestedChannelsHex.map(channelIdHex => resultMap[channelIdHex] || false) as boolean[]
+    },
     async unsubscribe (query: any): Promise<boolean[]> {
       const { pushToken, idsBase64 } = await processTokens(log, query)
-      return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
+      return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), false, cb))
     },
     closeSocket (session: string): boolean {
       const info = webSocketsBySession[session]
