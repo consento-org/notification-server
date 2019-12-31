@@ -141,7 +141,7 @@ async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: 
 }
 
 // eslint-disable-next-line @typescript-eslint/promise-function-async
-async function _fetch (url: IURLParts, ws: WSClient | undefined, path: string, query: { [key: string]: string }): Promise<string> {
+function _fetch (url: IURLParts, ws: WSClient | undefined, path: string, query: { [key: string]: string }): Promise<string> {
   return cancelable <string>(function * (child) {
     if (ws !== undefined) {
       const result = yield ((wsRequest(ws, path, query) as ICancelable<string>).catch(error => {
