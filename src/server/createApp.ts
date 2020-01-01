@@ -178,7 +178,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
             error: `${error.message}
   ${error.stack}`
           })
-          return null
+          return messagesChunk.map<{ status: 'error', message: string }>(() => ({ status: 'error', message: String(error.message) }))
         }
       })
 
