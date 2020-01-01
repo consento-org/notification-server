@@ -62,8 +62,8 @@ async function processTokens (log: (msg: any) => void, query: { [key: string]: a
     log({ invalidRequest: { invalidPushToken: pushToken } })
     throw Object.assign(new Error('invalid-push-token'), { httpCode: 400 })
   }
-  const idsBase64 = idsBase64Raw !== undefined ? idsBase64Raw.split(';') : []
-  const signaturesBase64 = signaturesBase64Raw !== undefined ? signaturesBase64Raw.split(';') : []
+  const idsBase64 = idsBase64Raw !== undefined ? idsBase64Raw.split(';').filter(Boolean) : []
+  const signaturesBase64 = signaturesBase64Raw !== undefined ? signaturesBase64Raw.split(';').filter(Boolean) : []
   const pushTokenBuffer = Buffer.from(pushToken)
   let index = 0
   if (idsBase64.length !== signaturesBase64.length) {

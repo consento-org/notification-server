@@ -108,6 +108,7 @@ describe('working api integration', () => {
           expect(await client.send(senderB, 'Post B')).toEqual([])
           await wait(10)
           expect(messageReceived).toBe(true)
+          await client.reset([])
           close()
         })().then(cb)
       })
