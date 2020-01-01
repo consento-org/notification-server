@@ -71,9 +71,13 @@ async function processTokens (log: (msg: any) => void, query: { [key: string]: a
   }
   for (const idBase64 of idsBase64) {
     const signature = signaturesBase64[index]
-    if (!await sodium.verify(Buffer.from(idBase64, 'base64'), Buffer.from(signature, 'base64'), pushTokenBuffer)) {
-      log({ invalidRequest: { invalidSignature: index } })
-      throw Object.assign(new Error(`invalid-signature[${index}]`), { httpCode: 400 })
+    try {
+      if (!await sodium.verify(Buffer.from(idBase64, 'base64'), Buffer.from(signature, 'base64'), pushTokenBuffer)) {
+        log({ invalidRequest: { invalidSignature: index } })
+        throw Object.assign(new Error(`invalid-signature[${index}]`), { httpCode: 400 })
+      }
+    } catch (error) {
+      throw Object.assign(new Error(`invalid-signature-fatal[${index}]`), { httpCode: 400, reason: error.message })
     }
     index += 1
   }
