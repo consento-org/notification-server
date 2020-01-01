@@ -169,7 +169,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       .chunkPushNotifications(expoMessages)
       .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
         try {
-          return await expo.sendPushNotificationsAsync(messagesChunk)
+          return await expo.sendPushNotificationsAsync(messagesChunk) // TODO: Deal with the responses from expo for each token
         } catch (error) {
           logError({
             type: 'send-error',
