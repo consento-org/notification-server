@@ -199,7 +199,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           body: message.data
         }), (error: Error) => {
           if (error !== null && error !== undefined) {
-            return reject(error)
+            return resolve([{ status: 'error', message: error.message }])
           }
           resolve([{ status: 'ok', id: 'ws::pass-through' }])
         })
