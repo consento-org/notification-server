@@ -2,9 +2,11 @@
 import { createServer } from '../server/createServer'
 import { createDb } from '../server/createDb'
 import Expo from 'expo-server-sdk'
+import { resolve } from 'path'
 
 // Using this directly from package.json breaks the release task
 const VERSION = '0.0.13'
+const DB_PATH = resolve(__dirname, ('NOTIFICATION_DB_PATH' in process.env) ? process.env.NOTIFICATION_DB_PATH : 'db')
 
 function log (obj: any): void {
   console.log(JSON.stringify({
@@ -28,7 +30,7 @@ function logError (err: any): void {
 }
 
 const db = createDb({
-  path: './db',
+  path: DB_PATH,
   log,
   maxSubscriptions: 1000,
   replicate: false
@@ -47,6 +49,7 @@ const listener = app.listen(port, (error: Error) => {
   log({
     start: listener.address(),
     error,
+    dbPath: DB_PATH,
     version: VERSION
   })
 }).on('error', (error: Error) => {
