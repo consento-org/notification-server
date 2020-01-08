@@ -75,8 +75,7 @@ function toRequest (token: Promise<string>, receivers: Iterable<IReceiver>): ICa
     const idsBase64: string[] = []
     const signaturesBase64: string[] = []
     for (const receiver of receivers) {
-      const receiverIdBase64 = yield receiver.idBase64()
-      idsBase64.push(receiverIdBase64)
+      idsBase64.push(receiver.idBase64)
       const pushTokenBuffer = Buffer.from(pushToken)
       signaturesBase64.push(bufferToString(yield receiver.sign(pushTokenBuffer), 'base64'))
     }
@@ -333,9 +332,10 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     )
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async send (channel: IAnnonymous, message: IEncryptedMessage): Promise<string[]> {
     return _fetch(this._url, this._ws, 'send', {
-      idBase64: await channel.idBase64(),
+      idBase64: channel.idBase64,
       bodyBase64: bufferToString(message.body, 'base64'),
       signatureBase64: bufferToString(message.signature, 'base64')
     } as any) as any

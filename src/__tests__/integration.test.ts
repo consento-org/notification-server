@@ -12,7 +12,7 @@ import { createDb } from '../server/createDb'
 import { IExpoTransportOptions } from '../client/types'
 import { exists } from '../util/exists'
 
-const { Sender } = setup(sodium)
+const { createSender } = setup(sodium)
 
 const wait = async (time: number): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, time))
 
@@ -70,9 +70,9 @@ describe('working api integration', () => {
               return createDummyExpoToken()
             }
           }
-          const senderA = Sender.create()
+          const senderA = await createSender()
           const receiverA = senderA.newReceiver()
-          const senderB = Sender.create()
+          const senderB = await createSender()
           const receiverB = senderB.newReceiver()
           const message = 'Hello World'
           const transport = new ExpoTransport(opts)
