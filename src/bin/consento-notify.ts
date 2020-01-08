@@ -5,7 +5,7 @@ import Expo from 'expo-server-sdk'
 import { resolve } from 'path'
 
 // Using this directly from package.json breaks the release task
-const VERSION = '0.0.13'
+const VERSION = '0.0.14'
 const DB_PATH = resolve(__dirname, ('NOTIFICATION_DB_PATH' in process.env) ? process.env.NOTIFICATION_DB_PATH : 'db')
 
 function log (obj: any): void {
