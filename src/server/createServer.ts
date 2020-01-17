@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import express, { Request } from 'express'
 import WebSocket from 'ws'
 import { AppOptions, createApp } from './createApp'
+import { VERSION } from '../version'
 
 export type CB = (error?: Error) => void
 
@@ -60,6 +61,7 @@ export function createServer (opts: AppOptions): INotificationServer {
         }
       })
   }
+  http.get('/', (req: Request) => { req.res.send({ server: '@consento/notification-server', version: VERSION }).end() })
   http.post('/send', wrapAsync(app.send))
   http.post('/subscribe', wrapAsync(app.subscribe))
   http.post('/unsubscribe', wrapAsync(app.unsubscribe))
