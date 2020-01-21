@@ -283,14 +283,17 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         }
       }
 
+      const channelsToSubscribeHex = Object.keys(channelsToSubscribeHexLookup)
       await asyncSeries <string, boolean>(channelsToUnsubscribeHex, (idHex, cb) => db.toggleSubscription(pushToken, idHex, false, cb))
-      await asyncSeries <string, boolean>(Object.keys(channelsToSubscribeHexLookup), (idHex, cb) => db.toggleSubscription(pushToken, idHex, true, (error: Error, success?: boolean) => {
+      await asyncSeries <string, boolean>(channelsToSubscribeHex, (idHex, cb) => db.toggleSubscription(pushToken, idHex, true, (error: Error, success?: boolean) => {
         if (exists(error)) return cb(error, success)
         resultMap[idHex] = success
         cb(null, success)
       }))
+      const result: boolean[] = requestedChannelsHex.map(channelIdHex => resultMap[channelIdHex] || false)
+      log({ reset: { channelsToSubscribeHex, channelsToUnsubscribeHex, pushToken, requestedChannelsHex, result } })
 
-      return requestedChannelsHex.map(channelIdHex => resultMap[channelIdHex] || false) as boolean[]
+      return result
     },
     async unsubscribe (query: any): Promise<boolean[]> {
       const { pushToken, idsBase64 } = await processTokens(log, query)
