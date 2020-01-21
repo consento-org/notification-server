@@ -131,6 +131,14 @@ interface IWebSocketSession {
   socket: WebSocket
 }
 
+interface IExpoErrorCode {
+  code: string
+}
+
+function isCodedError (ticket: any): ticket is IExpoErrorCode {
+  return ticket.code !== null
+}
+
 export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   if (expo === undefined) {
     expo = new Expo({})
@@ -138,6 +146,22 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
 
   const webSocketsByPushToken: { [pushToken: string]: { socket: WebSocket, session: string } } = {}
   const webSocketsBySession: { [session: string]: IWebSocketSession } = {}
+
+  async function sendExpo (messageId: string, messagesChunk: ExpoPushMessage[]): Promise<ExpoPushTicket[]> {
+    try {
+      return await expo.sendPushNotificationsAsync(messagesChunk) // TODO: Deal with the responses from expo for each token
+    } catch (error) {
+      logError({
+        type: 'send-error',
+        target: messagesChunk.map(message => message.to),
+        messageId,
+        code: error.code,
+        error: error.message,
+        stack: error.stack
+      })
+      return messagesChunk.map<{ status: 'error', message: string }>(() => ({ status: 'error', message: String(error.message), code: error.code }))
+    }
+  }
 
   async function sendMessage (idBase64: string, message: EncryptedMessageBase64): Promise<string[]> {
     const messageId = randomBytes(8).toString('hex')
@@ -167,20 +191,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
 
     const expoPromises = expo
       .chunkPushNotifications(expoMessages)
-      .map(async (messagesChunk): Promise<ExpoPushTicket[]> => {
-        try {
-          return await expo.sendPushNotificationsAsync(messagesChunk) // TODO: Deal with the responses from expo for each token
-        } catch (error) {
-          logError({
-            type: 'send-error',
-            target: messages.map(message => message.to),
-            messageId,
-            error: `${error.message}
-  ${error.stack}`
-          })
-          return messagesChunk.map<{ status: 'error', message: string }>(() => ({ status: 'error', message: String(error.message) }))
-        }
-      })
+      .map(async messagesChunk => sendExpo(messageId, messagesChunk))
 
     const webSocketPromises = webSocketMessages
       // eslint-disable-next-line @typescript-eslint/require-await
@@ -200,7 +211,8 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           body: message.data
         }), (error: Error) => {
           if (error !== null && error !== undefined) {
-            return resolve([{ status: 'error', message: error.message }])
+            socket.close()
+            return reject(error)
           }
           resolve([{ status: 'ok', id: 'ws::pass-through' }])
         })
@@ -209,7 +221,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           type: 'socket-error',
           error
         })
-        return expo.sendPushNotificationsAsync([message])
+        return sendExpo(messageId, [message])
       }))
 
     const chunkedResult = await Promise.all(
@@ -220,6 +232,11 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         if (result.status === 'ok') {
           all.push(result.id)
           continue
+        }
+        if (isCodedError(result)) {
+          all.push(`error:${result.code}`)
+        } else {
+          all.push('error')
         }
         logError({
           type: 'submission-error',
