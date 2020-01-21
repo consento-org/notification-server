@@ -68,7 +68,7 @@ export function createServer (opts: AppOptions): INotificationServer {
   http.post('/reset', wrapAsync(app.reset))
 
   function handleConnection (socket: WebSocket): void {
-    const session = randomBytes(32).toString('hex')
+    const session = randomBytes(8).toString('hex')
     socket.onmessage = (event: WebSocket.MessageEvent) => {
       if (typeof event.data !== 'string') {
         return
