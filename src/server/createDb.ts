@@ -140,14 +140,8 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
           if (exists(error)) {
             return mainCb(error)
           }
-          log({
-            [toggle ? 'add' : 'remove']: {
-              setPath,
-              targetHex,
-              entryHex
-            }
-          })
           const targetPath = `/${setPath}/${targetHex}/${entryHex}`
+          log({ [toggle ? 'add' : 'remove']: targetPath })
           const lock = getLock(targetPath)
           lock(cb => {
             db.get(targetPath, (error: Error, data: HyperDbNode[]) => {
