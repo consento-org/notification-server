@@ -108,7 +108,7 @@ export interface EncryptedMessageBase64 {
 export interface IApp {
   subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]>
   unsubscribe (query: any): Promise<boolean[]>
-  reset (query: any): Promise<boolean[]>
+  reset (query: any, session?: string, socket?: WebSocket): Promise<boolean[]>
   send (query: any): Promise<string[]>
   closeSocket (session: string): boolean
 }
@@ -255,8 +255,11 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       }
       return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
-    async reset (query: any): Promise<boolean[]> {
+    async reset (query: any, session?: string, socket?: WebSocket): Promise<boolean[]> {
       const { pushToken, idsBase64: channelsToSubscribeBase64 } = await processTokens(log, query)
+      if (socket !== undefined) {
+        registerSocket(pushToken, session, socket)
+      }
 
       const subscribedChannelsHex = await (new Promise<string[]>((resolve, reject) => {
         db.channelsByToken(pushToken, (error, idsHex) => (error !== null) ? reject(error) : resolve(idsHex))

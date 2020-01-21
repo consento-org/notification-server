@@ -105,7 +105,7 @@ export function createServer (opts: AppOptions): INotificationServer {
         }
         if (data.type === 'reset') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
-          return app.reset(data.query)
+          return app.reset(data.query, session, event.target)
         }
       })()
         .then(
