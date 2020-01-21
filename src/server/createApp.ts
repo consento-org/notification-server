@@ -136,7 +136,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     expo = new Expo({})
   }
 
-  const webSocketsByPushToken: { [pushToken: string]: WebSocket } = {}
+  const webSocketsByPushToken: { [pushToken: string]: { socket: WebSocket, session: string } } = {}
   const webSocketsBySession: { [session: string]: IWebSocketSession } = {}
 
   async function sendMessage (idBase64: string, message: EncryptedMessageBase64): Promise<string[]> {
@@ -185,12 +185,13 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     const webSocketPromises = webSocketMessages
       // eslint-disable-next-line @typescript-eslint/require-await
       .map(async (message) => new Promise <ExpoPushTicket[]>((resolve, reject) => {
-        const socket = webSocketsByPushToken[String(message.to)]
+        const { socket, session } = webSocketsByPushToken[String(message.to)]
         log({
           send: {
             idHex,
             message,
             messageId,
+            session,
             via: 'websocket'
           }
         })
@@ -230,7 +231,10 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   }
 
   const registerSocket = (pushTokenHex: string, session: string, socket: WebSocket): boolean => {
-    webSocketsByPushToken[pushTokenHex] = socket
+    log({ registerWebSocket: { session, pushTokenHex } })
+    webSocketsByPushToken[pushTokenHex] = {
+      socket, session
+    }
     let info = webSocketsBySession[session]
     if (info === undefined) {
       info = {
@@ -250,7 +254,6 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     async subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]> {
       const { pushToken, idsBase64 } = await processTokens(log, query)
       if (socket !== undefined) {
-        log({ registerWebSocket: { session, pushToken } })
         registerSocket(pushToken, session, socket)
       }
       return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
