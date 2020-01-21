@@ -44,6 +44,7 @@ describe('working api integration', () => {
               notificationsMock.emit('message', message)
               setImmediate(resolve)
             }))
+            result.push({ status: 'ok', id: 'ticket' })
           }
           return result
         }
@@ -105,7 +106,12 @@ describe('working api integration', () => {
             }
           })
           expect(await client.send(senderA, 'Post A')).toEqual(['ws::pass-through'])
-          expect(await client.send(senderB, 'Post B')).toEqual([])
+          try {
+            await client.send(senderB, 'Post B')
+            fail('no error')
+          } catch (err) {
+            expect(err.code).toEqual('no-receivers')
+          }
           await wait(10)
           expect(messageReceived).toBe(true)
           await client.reset([])

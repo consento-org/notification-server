@@ -19,7 +19,7 @@
   "author": "Martin Heidegger <martin.heidegger@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@consento/api": "0.0.19",
+    "@consento/api": "0.0.21",
     "@consento/crypto": "0.0.12",
     "cross-fetch": "^3.0.4",
     "events": "^3.0.0",
