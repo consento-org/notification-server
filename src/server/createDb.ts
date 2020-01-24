@@ -78,6 +78,7 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
     let lock = locks[token]
     if (lock === undefined) {
       lock = createLockCb(() => {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete locks[token]
       })
       locks[token] = lock

@@ -101,7 +101,7 @@ function fetchHttp (url: IURLParts, path: string, query: { [key: string]: string
     }).then(async res => {
       const text = await res.text()
       if (res.status !== 200) {
-        throw new Error(`HTTP Request failed[${res.status}] → ${text}
+        throw new Error(`HTTP Request failed[${res.status.toString()}] → ${text}
   ${JSON.stringify(opts, null, 2)}`)
       }
       try {
@@ -119,10 +119,11 @@ async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: 
   const rid = ++globalRid
   const res = new Promise<any>((resolve, reject) => {
     const timeout = setTimeout(() => {
-      finish({ error: { type: 'timeout', message: `timeout #${rid}` } })
+      finish({ error: { type: 'timeout', message: `timeout #${rid.toString()}` } })
     }, 5000)
     const finish = (result: { error?: any, body?: any }): void => {
       clearTimeout(timeout)
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete globalRequests[rid]
       if (result.error !== undefined) {
         return reject(Object.assign(new Error(), result.error))
@@ -144,7 +145,7 @@ function _fetch (url: IURLParts, ws: WSClient | undefined, path: string, query: 
   return cancelable <string>(function * (child) {
     if (ws !== undefined) {
       const result = yield ((wsRequest(ws, path, query) as ICancelable<string>).catch(error => {
-        console.log(`Error using connection, sending using post. Error: ${error}`)
+        console.log(`Error using connection, sending using post. Error: ${String(error)}`)
       }))
       if (result !== undefined) {
         return result

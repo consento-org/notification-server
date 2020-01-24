@@ -67,17 +67,17 @@ async function processTokens (log: (msg: any) => void, query: { [key: string]: a
   const pushTokenBuffer = Buffer.from(pushToken)
   let index = 0
   if (idsBase64.length !== signaturesBase64.length) {
-    throw Object.assign(new Error(`unequal-amount-of-signatures[${idsBase64.length} != ${signaturesBase64.length}]`), { httpCode: 400 })
+    throw Object.assign(new Error(`unequal-amount-of-signatures[${String(idsBase64.length)} != ${String(signaturesBase64.length)}]`), { httpCode: 400 })
   }
   for (const idBase64 of idsBase64) {
     const signature = signaturesBase64[index]
     try {
       if (!await sodium.verify(Buffer.from(idBase64, 'base64'), Buffer.from(signature, 'base64'), pushTokenBuffer)) {
         log({ invalidRequest: { invalidSignature: index } })
-        throw Object.assign(new Error(`invalid-signature[${index}]`), { httpCode: 400 })
+        throw Object.assign(new Error(`invalid-signature[${index.toString()}]`), { httpCode: 400 })
       }
     } catch (error) {
-      throw Object.assign(new Error(`invalid-signature-fatal[${index}]`), { httpCode: 400, reason: error.message })
+      throw Object.assign(new Error(`invalid-signature-fatal[${index.toString()}]`), { httpCode: 400, reason: error.message })
     }
     index += 1
   }
@@ -293,6 +293,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
 
       for (const subscribedChannelHex of subscribedChannelsHex) {
         if (requestedChannelsHexLookup[subscribedChannelHex]) {
+          // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
           delete channelsToSubscribeHexLookup[subscribedChannelHex]
           resultMap[subscribedChannelHex] = true
         } else {
@@ -321,8 +322,10 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       if (info === undefined) {
         return false
       }
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete webSocketsBySession[session]
       for (const pushTokenHex of info.pushTokensHex) {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete webSocketsByPushToken[pushTokenHex]
       }
       return true
