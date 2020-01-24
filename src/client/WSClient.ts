@@ -87,7 +87,9 @@ export class WSClient {
     }
     if (this._instance.readyState !== 1) {
       if (attempt === 5) {
-        setImmediate(cb, new Error('No connection after 500ms.'))
+        if (cb !== undefined) {
+          setImmediate(cb, new Error('No connection after 500ms.'))
+        }
       } else {
         setTimeout(() => this._send(attempt + 1, data, cb), 100)
       }
