@@ -117,7 +117,9 @@ function fetchHttp (url: IURLParts, path: string, query: { [key: string]: string
 
 async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: string }): Promise<string> {
   const rid = ++globalRid
+  let _reject: (error: Error) => void
   const res = new Promise<any>((resolve, reject) => {
+    _reject = reject
     const timeout = setTimeout(() => {
       finish({ error: { type: 'timeout', message: `timeout #${rid.toString()}` } })
     }, 5000)
@@ -132,11 +134,15 @@ async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: 
     }
     globalRequests[rid] = finish
   })
-  await ws.send(JSON.stringify({
+  ws.send(JSON.stringify({
     type: path,
     rid,
     query
-  }))
+  }), (error: Error) => {
+    if (error !== null && error !== undefined) {
+      return _reject(error)
+    }
+  })
   return res
 }
 
