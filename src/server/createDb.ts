@@ -124,7 +124,7 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
             return cb(new Error(`Too many relations: ${countPath}[${entryHex}]`))
           }
           if (numChange === -1 && count === 0) {
-            return cb(new Error(`Invalid count: ${countPath}[${entryHex}]`))
+            return cb(new Error(`Invalid count: ${countPath}[${entryHex}] [${numChange.toString()}][${count.toString()}]`))
           }
           op(cb)
         }, mainCb)
