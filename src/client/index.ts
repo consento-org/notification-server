@@ -70,6 +70,7 @@ interface IRequest {
 
 // eslint-disable-next-line @typescript-eslint/promise-function-async
 function toRequest (token: Promise<string>, receivers: Iterable<IReceiver>): ICancelable<IRequest> {
+  // eslint-disable-next-line @typescript-eslint/return-await
   return cancelable<IRequest>(function * () {
     const pushToken: string = yield token
     const idsBase64: string[] = []
@@ -89,13 +90,15 @@ function toRequest (token: Promise<string>, receivers: Iterable<IReceiver>): ICa
 
 // eslint-disable-next-line @typescript-eslint/promise-function-async
 function fetchHttp (url: IURLParts, path: string, query: { [key: string]: string }): ICancelable<string> {
+  // eslint-disable-next-line @typescript-eslint/return-await
   return abortCancelable<string>(async (signal: AbortSignal) => {
     const opts = {
       ...url,
       pathname: `${url.pathname}${path}`,
       query
     }
-    return fetch(format(opts), {
+    // eslint-disable-next-line no-return-await
+    return await fetch(format(opts), {
       method: 'POST',
       signal
     }).then(async res => {
@@ -143,11 +146,13 @@ async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: 
       return _reject(error)
     }
   })
+  // eslint-disable-next-line @typescript-eslint/return-await
   return res
 }
 
 // eslint-disable-next-line @typescript-eslint/promise-function-async
 function _fetch (url: IURLParts, ws: WSClient | undefined, path: string, query: { [key: string]: string }): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/return-await
   return cancelable <string>(function * (child) {
     if (ws !== undefined) {
       const result = yield ((wsRequest(ws, path, query) as ICancelable<string>).catch(error => {
@@ -254,12 +259,14 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     if (this._pushToken === undefined) {
       this._pushToken = this._getToken()
     }
+    // eslint-disable-next-line @typescript-eslint/return-await
     return this._pushToken
   }
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   unsubscribe (receivers: IReceiver[]): ICancelable<boolean[]> {
     if (receivers.length === 0) {
+      // eslint-disable-next-line @typescript-eslint/return-await
       return cancelable(function * () {
         return []
       })
@@ -267,6 +274,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     const url = this._url
     const ws = this._ws
     const token = this.token
+    // eslint-disable-next-line @typescript-eslint/return-await
     return cancelable<boolean[]>(
       function * (child) {
         const opts = yield child(toRequest(token, receivers))
@@ -289,6 +297,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   subscribe (receivers: IReceiver[]): ICancelable<boolean[]> {
     if (receivers.length === 0) {
+      // eslint-disable-next-line @typescript-eslint/return-await
       return cancelable(function * () {
         return []
       })
@@ -296,6 +305,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     const url = this._url
     const ws = this._ws
     const token = this.token
+    // eslint-disable-next-line @typescript-eslint/return-await
     return cancelable<boolean[]>(
       function * (child) {
         const opts = yield child(toRequest(token, receivers))
@@ -320,6 +330,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     const url = this._url
     const ws = this._ws
     const token = this.token
+    // eslint-disable-next-line @typescript-eslint/return-await
     return cancelable<boolean[]>(
       function * (child) {
         const opts = yield child(toRequest(token, receivers))

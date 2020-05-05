@@ -93,22 +93,27 @@ export function createServer (opts: AppOptions): INotificationServer {
       ;(async () => {
         if (data.type === 'send') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
+          // eslint-disable-next-line @typescript-eslint/return-await
           return app.send(data.query)
         }
         if (data.type === 'subscribe') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
+          // eslint-disable-next-line @typescript-eslint/return-await
           return app.subscribe(data.query, session, event.target)
         }
         if (data.type === 'unsubscribe') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
+          // eslint-disable-next-line @typescript-eslint/return-await
           return app.unsubscribe(data.query)
         }
         if (data.type === 'reset') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
+          // eslint-disable-next-line @typescript-eslint/return-await
           return app.reset(data.query, session, event.target)
         }
       })()
         .then(
+          // eslint-disable-next-line @typescript-eslint/return-await
           async body => new Promise(resolve => {
             log({ response: { rid: data.rid, body } })
             socket.send(JSON.stringify({
@@ -125,6 +130,7 @@ export function createServer (opts: AppOptions): INotificationServer {
               resolve()
             })
           }),
+          // eslint-disable-next-line @typescript-eslint/return-await
           async error => new Promise(resolve => {
             logError({
               type: 'websocket-error',

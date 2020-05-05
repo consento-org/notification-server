@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-throw-literal */
 import { randomBytes } from 'crypto'
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
@@ -18,6 +19,7 @@ async function asyncSeries<Entry, Result> (
   entries: Entry[],
   op: (entry: Entry, cb: (error: Error | null, result?: Result) => void) => void
 ): Promise<Result[]> {
+  // eslint-disable-next-line @typescript-eslint/return-await
   return new Promise <Result[]>((resolve, reject) => _asyncSeries(entries, op, resolve, reject, []))
 }
 
@@ -191,10 +193,11 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
 
     const expoPromises = expo
       .chunkPushNotifications(expoMessages)
-      .map(async messagesChunk => sendExpo(messageId, messagesChunk))
+      // eslint-disable-next-line @typescript-eslint/promise-function-async
+      .map(messagesChunk => sendExpo(messageId, messagesChunk))
 
     const webSocketPromises = webSocketMessages
-      // eslint-disable-next-line @typescript-eslint/require-await
+      // eslint-disable-next-line @typescript-eslint/return-await
       .map(async (message) => new Promise <ExpoPushTicket[]>((resolve, reject) => {
         const { socket, session } = webSocketsByPushToken[String(message.to)]
         log({
@@ -221,6 +224,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
           type: 'socket-error',
           error
         })
+        // eslint-disable-next-line @typescript-eslint/return-await
         return sendExpo(messageId, [message])
       }))
 
@@ -273,6 +277,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       if (socket !== undefined) {
         registerSocket(pushToken, session, socket)
       }
+      // eslint-disable-next-line @typescript-eslint/return-await
       return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
     async reset (query: any, session?: string, socket?: WebSocket): Promise<boolean[]> {
@@ -315,6 +320,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     },
     async unsubscribe (query: any): Promise<boolean[]> {
       const { pushToken, idsBase64 } = await processTokens(log, query)
+      // eslint-disable-next-line @typescript-eslint/return-await
       return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), false, cb))
     },
     closeSocket (session: string): boolean {
@@ -342,6 +348,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         signature: Buffer.from(signatureBase64, 'base64')
       }
       await verifyRequest(idBase64, message)
+      // eslint-disable-next-line @typescript-eslint/return-await
       return sendMessage(idBase64, messageBase64)
     }
   }

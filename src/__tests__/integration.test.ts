@@ -14,6 +14,7 @@ import { exists } from '../util/exists'
 
 const { createSender } = setup(sodium)
 
+// eslint-disable-next-line @typescript-eslint/return-await
 const wait = async (time: number): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, time))
 
 describe('working api integration', () => {

@@ -7,6 +7,7 @@ const dbPath = '.tmp/db-test-' + Math.random().toString(32)
 mkdtempSync(dbPath)
 
 describe('database operations', () => {
+  // eslint-disable-next-line @typescript-eslint/return-await
   it('store,list,remove subscriptions', async () => new Promise((resolve) => {
     const counts = {
       adds: 0,
