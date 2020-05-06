@@ -63,8 +63,7 @@ const api = setup({
 With this API you can send/receive notifications like this:
 
 ```javascript
-const sender = api.Sender.create()
-const receiver = sender.newReceiver()
+const { receiver, sender } = api.crypto.createReceiver()
 
 api.notifications.on('message', (receiver/*: IReceiver*/, message) => {
   console.log('hello world')
