@@ -12,7 +12,7 @@ import { createDb } from '../server/createDb'
 import { IExpoTransportOptions } from '../client/types'
 import { exists } from '../util/exists'
 
-const { createSender } = setup(sodium)
+const { createReceiver } = setup(sodium)
 
 // eslint-disable-next-line @typescript-eslint/return-await
 const wait = async (time: number): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, time))
@@ -72,10 +72,8 @@ describe('working api integration', () => {
               return createDummyExpoToken()
             }
           }
-          const senderA = await createSender()
-          const receiverA = senderA.newReceiver()
-          const senderB = await createSender()
-          const receiverB = senderB.newReceiver()
+          const { sender: senderA, receiver: receiverA } = await createReceiver()
+          const { sender: senderB, receiver: receiverB } = await createReceiver()
           const message = 'Hello World'
           const transport = new ExpoTransport(opts)
           notificationsMock.addListener('message', transport.handleNotification)

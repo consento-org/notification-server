@@ -78,7 +78,7 @@ function toRequest (token: Promise<string>, receivers: Iterable<IReceiver>): ICa
     for (const receiver of receivers) {
       idsBase64.push(receiver.idBase64)
       const pushTokenBuffer = Buffer.from(pushToken)
-      signaturesBase64.push(bufferToString(yield receiver.sign(pushTokenBuffer), 'base64'))
+      signaturesBase64.push(bufferToString(yield receiver.sender.sign(pushTokenBuffer), 'base64'))
     }
     return {
       idsBase64: idsBase64.join(';'),
