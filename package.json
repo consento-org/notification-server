@@ -1,6 +1,6 @@
 {
   "name": "@consento/notification-server",
-  "version": "0.0.19",
+  "version": "0.1.0",
   "description": "A expo based notification implementation for Consento. Both server & client code. ",
   "private": true,
   "main": "./index.js",
