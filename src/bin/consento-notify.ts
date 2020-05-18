@@ -3,7 +3,7 @@ import { createServer } from '../server/createServer'
 import { createDb } from '../server/createDb'
 import Expo from 'expo-server-sdk'
 import { resolve } from 'path'
-import { VERSION } from '../version'
+import { VERSION } from '../package'
 
 const DB_PATH = resolve(__dirname, ('NOTIFICATION_DB_PATH' in process.env) ? process.env.NOTIFICATION_DB_PATH : 'db')
 
