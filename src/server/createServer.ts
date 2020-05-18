@@ -66,6 +66,7 @@ export function createServer (opts: AppOptions): INotificationServer {
   http.post('/subscribe', wrapAsync(app.subscribe))
   http.post('/unsubscribe', wrapAsync(app.unsubscribe))
   http.post('/reset', wrapAsync(app.reset))
+  http.post('/compatible', wrapAsync(app.compatible))
   http.get('/version', (req: Request) => { req.res.send(VERSION).end() })
 
   function handleConnection (socket: WebSocket): void {
@@ -111,6 +112,10 @@ export function createServer (opts: AppOptions): INotificationServer {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
           // eslint-disable-next-line @typescript-eslint/return-await
           return app.reset(data.query, session, event.target)
+        }
+        if (data.type === 'compatible') {
+          // eslint-disable-next-line @typescript-eslint/return-await
+          return app.compatible(data.query)
         }
         if (data.type === 'version') {
           return VERSION

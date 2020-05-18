@@ -6,6 +6,8 @@ import { IEncryptedMessage } from '@consento/crypto/core/types'
 import { DB } from './createDb'
 import WebSocket from 'ws'
 import { exists } from '../util/exists'
+import compareVersions from 'compare-versions'
+import { VERSION } from '../package'
 
 async function verifyRequest (idBase64: string, message: IEncryptedMessage): Promise<boolean> {
   const id = Buffer.from(idBase64, 'base64')
@@ -112,6 +114,7 @@ export interface IApp {
   unsubscribe (query: any): Promise<boolean[]>
   reset (query: any, session?: string, socket?: WebSocket): Promise<boolean[]>
   send (query: any): Promise<string[]>
+  compatible (query: any): Promise<boolean>
   closeSocket (session: string): boolean
 }
 
@@ -335,6 +338,9 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         delete webSocketsByPushToken[pushTokenHex]
       }
       return true
+    },
+    async compatible (query: { version: string }): Promise<boolean> {
+      return compareVersions.compare(query.version, VERSION, '>=')
     },
     async send (query: any): Promise<string[]> {
       const { idBase64, bodyBase64, signatureBase64 } = query
