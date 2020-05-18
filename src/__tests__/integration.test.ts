@@ -1,8 +1,9 @@
+import { AppState } from 'react-native'
 import { setup, IEncodable } from '@consento/crypto'
 import { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
 import { Notifications, isSuccess } from '@consento/api/notifications'
-import { ExpoTransport } from '../client'
+import { ExpoTransport, EClientStatus } from '../client'
 import { createDummyExpoToken } from '../server/__tests__/token-dummy'
 import { EventEmitter } from 'events'
 import { mkdirSync, mkdtempSync } from 'fs'
@@ -13,6 +14,21 @@ import { IExpoTransportOptions } from '../client/types'
 import { exists } from '../util/exists'
 
 const { createReceiver } = setup(sodium)
+
+const appStateCallbacks = new Set<() => {}>()
+const mockAddListener = jest.fn((event, callback) => {
+  expect(event).toBe('change')
+  appStateCallbacks.add(callback)
+})
+jest.resetModules()
+jest.doMock('react-native/Libraries/AppState/AppState', () => ({
+  addEventListener: mockAddListener
+}))
+
+function changeState (appState: 'background' | 'active'): void {
+  AppState.currentState = appState
+  appStateCallbacks.forEach(entry => entry())
+}
 
 // eslint-disable-next-line @typescript-eslint/return-await
 const wait = async (time: number): Promise<void> => new Promise<void>(resolve => setTimeout(resolve, time))
@@ -76,9 +92,11 @@ describe('working api integration', () => {
           const { sender: senderB, receiver: receiverB } = await createReceiver()
           const message = 'Hello World'
           const transport = new ExpoTransport(opts)
+          transport.on('error', fail)
+          changeState('background')
+          await transport.awaitState(EClientStatus.FETCH, 100)
           notificationsMock.addListener('message', transport.handleNotification)
           const client = new Notifications({ transport })
-          transport.on('error', fail)
           const { afterSubscribe: receive } = await client.receive(receiverA)
           await Promise.all<any>([
             client.send(senderA, message),
@@ -89,7 +107,8 @@ describe('working api integration', () => {
           expect(await receive)
           expect(await client.subscribe([receiverA, receiverB])).toEqual([true, true])
           const directMessage = 'Ping Pong'
-          const close = transport.connect()
+          changeState('active')
+          await transport.awaitState(EClientStatus.WEBSOCKET_OPEN)
           const { afterSubscribe: receiveThroughSocket } = await client.receive(receiverA)
           await client.send(senderA, directMessage)
           expect(await receiveThroughSocket).toBe(directMessage)
@@ -114,8 +133,7 @@ describe('working api integration', () => {
           await wait(10)
           expect(messageReceived).toBe(true)
           await client.reset([])
-          close()
-        })().then(cb)
+        })().then(() => cb(), cb)
       })
     })
   })

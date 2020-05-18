@@ -1,40 +1,18 @@
 import { EventEmitter } from 'events'
 import { INotificationsTransport } from '@consento/api/notifications/types'
-import { IEncryptedMessage, IAnnonymous, IReceiver, ICancelable, cancelable, abortCancelable } from '@consento/api'
+import { IEncryptedMessage, IAnnonymous, IReceiver, ICancelable, cancelable, CancelError } from '@consento/api'
 import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
-import { format } from 'url'
-import urlParse from 'url-parse'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
-import fetch from 'cross-fetch'
-import { WSClient, MessageEvent, ErrorEvent, OpenEvent } from './WSClient'
+import { AppState, AppStateStatus } from 'react-native'
+import { getExpoToken } from '../util/getExpoToken'
+import { exists } from '../util/exists'
+import { IExpoTransportStrategy, EClientStatus } from './strategies/strategy'
+import { receiversToRequest } from './receiversToRequest'
+import { ErrorStrategy } from './strategies/ErrorStrategy'
+import { timeoutPromise } from '../util/timeoutPromise'
+import { StartupStrategy } from './strategies/StartupStrategy'
 
-function webSocketUrl (webUrl: string): string {
-  return webUrl.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
-}
-
-export interface IURLParts {
-  protocol: string
-  username: string
-  password: string
-  host: string
-  port: string
-  pathname: string
-}
-
-// eslint-disable-next-line @typescript-eslint/no-empty-function
-function noop (_: any): void {}
-
-function getURLParts (address: string): IURLParts {
-  const url = urlParse(address)
-  return {
-    protocol: url.protocol,
-    username: url.username,
-    password: url.password,
-    host: url.host,
-    port: url.port,
-    pathname: url.pathname
-  }
-}
+export { EClientStatus } from './strategies/strategy'
 
 interface INotification {
   idBase64: string
@@ -58,128 +36,24 @@ function isNotification (data: any): data is INotification {
   return true
 }
 
-let globalRid = 0
-const globalRequests: { [rid: number]: (result: { error?: any, data?: any }) => void } = {}
-
-interface IRequest {
-  [key: string]: string
-  idsBase64: string
-  signaturesBase64: string
-  pushToken: string
-}
-
-// eslint-disable-next-line @typescript-eslint/promise-function-async
-function toRequest (token: Promise<string>, receivers: Iterable<IReceiver>): ICancelable<IRequest> {
-  // eslint-disable-next-line @typescript-eslint/return-await
-  return cancelable<IRequest>(function * () {
-    const pushToken: string = yield token
-    const idsBase64: string[] = []
-    const signaturesBase64: string[] = []
-    for (const receiver of receivers) {
-      idsBase64.push(receiver.idBase64)
-      const pushTokenBuffer = Buffer.from(pushToken)
-      signaturesBase64.push(bufferToString(yield receiver.sender.sign(pushTokenBuffer), 'base64'))
-    }
-    return {
-      idsBase64: idsBase64.join(';'),
-      signaturesBase64: signaturesBase64.join(';'),
-      pushToken
-    }
-  })
-}
-
-// eslint-disable-next-line @typescript-eslint/promise-function-async
-function fetchHttp (url: IURLParts, path: string, query: { [key: string]: string }): ICancelable<string> {
-  // eslint-disable-next-line @typescript-eslint/return-await
-  return abortCancelable<string>(async (signal: AbortSignal) => {
-    const opts = {
-      ...url,
-      pathname: `${url.pathname}${path}`,
-      query
-    }
-    // eslint-disable-next-line no-return-await
-    return await fetch(format(opts), {
-      method: 'POST',
-      signal
-    }).then(async res => {
-      const text = await res.text()
-      if (res.status !== 200) {
-        throw new Error(`HTTP Request failed[${res.status.toString()}] → ${text}
-  ${JSON.stringify(opts, null, 2)}`)
-      }
-      try {
-        const data = JSON.parse(text)
-        return data
-      } catch (err) {
-        throw new Error(`HTTP Response not valid JSON.
-  ${text}`)
-      }
-    })
-  })
-}
-
-async function wsRequest (ws: WSClient, path: string, query: { [ key: string ]: string }): Promise<string> {
-  const rid = ++globalRid
-  let _reject: (error: Error) => void
-  const res = new Promise<any>((resolve, reject) => {
-    _reject = reject
-    const timeout = setTimeout(() => {
-      finish({ error: { type: 'timeout', message: `timeout #${rid.toString()}` } })
-    }, 5000)
-    const finish = (result: { error?: any, body?: any }): void => {
-      clearTimeout(timeout)
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-      delete globalRequests[rid]
-      if (result.error !== undefined) {
-        return reject(Object.assign(new Error(), result.error))
-      }
-      resolve(result.body)
-    }
-    globalRequests[rid] = finish
-  })
-  ws.send(JSON.stringify({
-    type: path,
-    rid,
-    query
-  }), (error: Error) => {
-    if (error !== null && error !== undefined) {
-      return _reject(error)
-    }
-  })
-  // eslint-disable-next-line @typescript-eslint/return-await
-  return res
-}
-
-// eslint-disable-next-line @typescript-eslint/promise-function-async
-function _fetch (url: IURLParts, ws: WSClient | undefined, path: string, query: { [key: string]: string }): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/return-await
-  return cancelable <string>(function * (child) {
-    if (ws !== undefined) {
-      const result = yield ((wsRequest(ws, path, query) as ICancelable<string>).catch(error => {
-        console.log(`Error using connection, sending using post. Error: ${String(error)}`)
-      }))
-      if (result !== undefined) {
-        return result
-      }
-    }
-    return yield child(fetchHttp(url, path, query))
-  })
-}
-
 export class ExpoTransport extends EventEmitter implements INotificationsTransport {
   _pushToken: Promise<string>
-  _url: IURLParts
   _getToken: IGetExpoToken
   _subscriptions: Set<IReceiver>
-  _ws: WSClient
+  _address: string
+  _background: boolean = false
+  _strategy: IExpoTransportStrategy
+  _strategyProcess: ICancelable<IExpoTransportStrategy>
+  _process: ICancelable<void>
+
   handleNotification: (notification: IExpoNotificationParts) => void
-  connect: () => () => void
-  disconnect: () => void
+
+  _stateChange: (state: AppStateStatus) => void
 
   constructor ({ address, getToken }: IExpoTransportOptions) {
     super()
-    this._url = getURLParts(address)
-    this._getToken = getToken
+    this._address = address
+    this._getToken = getToken ?? getExpoToken
     this._subscriptions = new Set()
     const processInput = (data: any): void => {
       if (isNotification(data)) {
@@ -189,70 +63,95 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
         })
       }
     }
-    this.handleNotification = (notification: IExpoNotificationParts): void => processInput(notification.data)
-    const handleWSMessage = (ev: MessageEvent): void => {
-      if (typeof ev.data !== 'string') {
-        return
-      }
-      let data
-      try {
-        data = JSON.parse(ev.data)
-      } catch (err) {
-        return
-      }
-      if (data.type === 'response') {
-        const res = globalRequests[data.rid]
-        if (res !== undefined) {
-          res(data)
+    this.handleNotification = (notification: IExpoNotificationParts): void => {
+      processInput(notification.data)
+    }
+
+    this._updateStrategy = this._updateStrategy.bind(this)
+    this._updateStrategy()
+    AppState.addEventListener('change', this._updateStrategy)
+  }
+
+  async destroy (): Promise<void> {
+    AppState.removeEventListener('change', this._stateChange)
+    this._nextStrategy(new ErrorStrategy(Object.assign(new Error('destroyed'), { code: 'EDESTROYED' })))
+  }
+
+  get address (): string {
+    return this._address
+  }
+
+  set address (address: string) {
+    if (this._address === address) {
+      this._address = address
+      this._updateStrategy()
+    }
+  }
+
+  _updateStrategy (): void {
+    this._nextStrategy(
+      new StartupStrategy(this._address, AppState.currentState !== 'background')
+    )
+  }
+
+  get state (): EClientStatus {
+    return this._strategy.state
+  }
+
+  _nextStrategy (strategy: IExpoTransportStrategy): void {
+    if (this._strategy !== undefined) {
+      this._strategy.off('input', this.handleNotification)
+    }
+    strategy.on('input', this.handleNotification)
+    this._strategy = strategy
+    let process: ICancelable<IExpoTransportStrategy>
+    if (exists(this._process)) {
+      process = cancelable<IExpoTransportStrategy, this>(function * (child) {
+        // eslint-disable-next-line handle-callback-err
+        yield (this._process.cancel().catch(() => {}))
+        return yield child(strategy.run(this.token, this._subscriptions))
+      }, this)
+    } else {
+      process = strategy.run(this.token, this._subscriptions)
+    }
+    this._process = process.then(
+      strategy => this._nextStrategy(strategy),
+      error => {
+        if (error instanceof CancelError) {
+          return
         }
-        return
+        this._nextStrategy(new ErrorStrategy(error))
       }
-      if (data.type !== 'message') {
-        return
+    )
+    // Just in case a run command finishes a bit too quickly...
+    if (this._strategy === strategy) {
+      this._strategyProcess = process
+      this.emit('state', this.state)
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/promise-function-async
+  awaitState (state: EClientStatus, timeout: number = 5000): Promise<void> {
+    let check: () => void
+    return timeoutPromise<void>(timeout, (resolve, reject) => {
+      if (this._strategy instanceof ErrorStrategy) {
+        return reject(this._strategy.error)
       }
-      processInput(data.body)
-    }
-    const debugError = (ev: ErrorEvent): void => {
-      this.emit('error', ev.error)
-    }
-    const handleWSError = (ev: ErrorEvent): void => {
-      this.emit('error', ev.error)
-      this._ws = undefined
-    }
-    const handleWSOpen = async (_: OpenEvent): Promise<void> => {
-      this.emit('socket-open')
-      if (this._subscriptions.size === 0) {
-        return
+      if (this.state === state) {
+        return resolve()
       }
-      try {
-        await wsRequest(this._ws, 'subscribe', await toRequest(this.token, this._subscriptions))
-      } catch (err) {
-        this.emit('error', err)
+      check = (): void => {
+        if (this._strategy instanceof ErrorStrategy) {
+          return reject(this._strategy.error)
+        }
+        if (this.state === state) {
+          resolve()
+        }
       }
-    }
-    const handleWSClose = (): void => {
-      this.emit('socket-close')
-    }
-    this.disconnect = () => {
-      if (this._ws !== undefined) {
-        this._ws.onerror = debugError
-        this._ws.onmessage = noop
-        this._ws.onopen = noop
-        this._ws.close()
-        this._ws = undefined
-      }
-    }
-    this.connect = () => {
-      if (this._ws === undefined) {
-        this._ws = new WSClient()
-        this._ws.open(webSocketUrl(format(this._url)))
-        this._ws.onmessage = handleWSMessage
-        this._ws.onerror = handleWSError
-        this._ws.onopen = handleWSOpen
-        this._ws.onclose = handleWSClose
-      }
-      return this.disconnect
-    }
+      this.on('state', check)
+    }).finally(() => {
+      this.removeListener('state', check)
+    })
   }
 
   get token (): Promise<string> {
@@ -271,15 +170,14 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
         return []
       })
     }
-    const url = this._url
-    const ws = this._ws
     const token = this.token
     // eslint-disable-next-line @typescript-eslint/return-await
-    return cancelable<boolean[]>(
+    return cancelable<boolean[], ExpoTransport>(
       function * (child) {
-        const opts = yield child(toRequest(token, receivers))
-        return yield _fetch(url, ws, 'unsubscribe', opts)
-      }
+        const opts = yield child(receiversToRequest(token, receivers))
+        return yield this._strategy.request('unsubscribe', opts)
+      },
+      this
     ).then(
       (result: boolean[]) => {
         for (const receiver of receivers) {
@@ -302,15 +200,14 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
         return []
       })
     }
-    const url = this._url
-    const ws = this._ws
     const token = this.token
     // eslint-disable-next-line @typescript-eslint/return-await
-    return cancelable<boolean[]>(
+    return cancelable<boolean[], this>(
       function * (child) {
-        const opts = yield child(toRequest(token, receivers))
-        return yield _fetch(url, ws, 'subscribe', opts)
-      }
+        const opts = yield child(receiversToRequest(token, receivers))
+        return yield this._strategy.request('subscribe', opts)
+      },
+      this
     ).then(
       (result: boolean[]) => {
         for (const receiver of receivers) {
@@ -327,15 +224,14 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   reset (receivers: IReceiver[]): ICancelable<boolean[]> {
-    const url = this._url
-    const ws = this._ws
     const token = this.token
     // eslint-disable-next-line @typescript-eslint/return-await
-    return cancelable<boolean[]>(
+    return cancelable<boolean[], this>(
       function * (child) {
-        const opts = yield child(toRequest(token, receivers))
-        return yield _fetch(url, ws, 'reset', opts)
-      }
+        const opts = yield child(receiversToRequest(token, receivers))
+        return yield this._strategy.request('reset', opts)
+      },
+      this
     ).then(
       (result: boolean[]) => {
         for (const receiver of receivers) {
@@ -352,7 +248,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async send (channel: IAnnonymous, message: IEncryptedMessage): Promise<string[]> {
-    return _fetch(this._url, this._ws, 'send', {
+    return this._strategy.request('send', {
       idBase64: channel.idBase64,
       bodyBase64: bufferToString(message.body, 'base64'),
       signatureBase64: bufferToString(message.signature, 'base64')
