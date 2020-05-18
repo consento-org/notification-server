@@ -3,6 +3,7 @@ import { IReceiver, ICancelable } from '@consento/api'
 import { cancelableReject } from '../../util/cancelableReject'
 
 export enum EClientStatus {
+  NOADDRESS = 'no_address',
   DESTROYED = 'destroyed',
   ERROR = 'error',
   FETCH = 'fetch',

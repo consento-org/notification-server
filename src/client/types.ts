@@ -5,6 +5,6 @@ export interface IExpoNotificationParts {
 export type IGetExpoToken = () => Promise<string>
 
 export interface IExpoTransportOptions {
-  address: string
+  address?: string
   getToken?: IGetExpoToken
 }

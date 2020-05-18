@@ -11,6 +11,7 @@ import { receiversToRequest } from './receiversToRequest'
 import { ErrorStrategy } from './strategies/ErrorStrategy'
 import { timeoutPromise } from '../util/timeoutPromise'
 import { StartupStrategy } from './strategies/StartupStrategy'
+import { NoAddressStrategy } from './strategies/NoAddressStrategy'
 
 export { EClientStatus } from './strategies/strategy'
 
@@ -90,7 +91,9 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
 
   _updateStrategy (): void {
     this._nextStrategy(
-      new StartupStrategy(this._address, AppState.currentState !== 'background')
+      (this._address === null || this._address === undefined || /^\s*$/.test(this._address))
+        ? new NoAddressStrategy()
+        : new StartupStrategy(this._address, AppState.currentState !== 'background')
     )
   }
 
