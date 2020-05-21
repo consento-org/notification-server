@@ -19,12 +19,12 @@
   "author": "Martin Heidegger <martin.heidegger@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@consento/api": "^0.1.1",
-    "@consento/crypto": "^0.1.1",
+    "@consento/api": "^0.1.2",
+    "@consento/crypto": "^0.1.2",
     "compare-versions": "^3.6.0",
     "cross-fetch": "^3.0.4",
     "events": "^3.1.0",
-    "expo": "^37.0.8",
+    "expo": "^37.0.12",
     "expo-server-sdk": "^3.5.0",
     "express": "^4.17.1",
     "flexlock-cb": "^2.2.0",
@@ -82,7 +82,7 @@
     "standard-version": "^8.0.0",
     "ts-jest": "^25.5.0",
     "ts-node": "^8.10.1",
-    "typescript": "^3.9.2"
+    "typescript": "^3.9.3"
   },
   "repository": {
     "type": "git",
