@@ -22,7 +22,6 @@ async function requestPermission (permission: Permissions.PermissionType): Promi
 }
 
 async function _getExpoToken (): Promise<Notifications.ExpoPushToken> {
-
   const { status: existingStatus } = await requestPermission(Permissions.NOTIFICATIONS)
 
   // only ask if permissions have not already been determined, because

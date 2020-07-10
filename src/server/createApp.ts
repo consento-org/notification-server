@@ -96,11 +96,11 @@ export interface AppOptions {
 }
 
 export interface IExpoParts {
-  sendPushNotificationsAsync(messages: ExpoPushMessage[]): Promise<ExpoPushTicket[]>
-  // getPushNotificationReceiptsAsync(receiptIds: ExpoPushReceiptId[]): Promise<{
+  sendPushNotificationsAsync: (messages: ExpoPushMessage[]) => Promise<ExpoPushTicket[]>
+  // getPushNotificationReceiptsAsync: (receiptIds: ExpoPushReceiptId[]) => Promise<{
   //     [id: string]: ExpoPushReceipt;
   // }>;
-  chunkPushNotifications(messages: ExpoPushMessage[]): ExpoPushMessage[][]
+  chunkPushNotifications: (messages: ExpoPushMessage[]) => ExpoPushMessage[][]
 }
 
 export interface EncryptedMessageBase64 {
@@ -110,12 +110,12 @@ export interface EncryptedMessageBase64 {
 }
 
 export interface IApp {
-  subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]>
-  unsubscribe (query: any): Promise<boolean[]>
-  reset (query: any, session?: string, socket?: WebSocket): Promise<boolean[]>
-  send (query: any): Promise<string[]>
-  compatible (query: any): Promise<boolean>
-  closeSocket (session: string): boolean
+  subscribe: (query: any, session?: string, socket?: WebSocket) => Promise<boolean[]>
+  unsubscribe: (query: any) => Promise<boolean[]>
+  reset: (query: any, session?: string, socket?: WebSocket) => Promise<boolean[]>
+  send: (query: any) => Promise<string[]>
+  compatible: (query: any) => Promise<boolean>
+  closeSocket: (session: string) => boolean
 }
 
 function split <T> (input: T[], condition: (entry: T) => boolean): [T[], T[]] {

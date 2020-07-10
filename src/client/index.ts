@@ -137,19 +137,19 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   awaitState (state: EClientStatus, timeout: number = 5000): Promise<void> {
     let check: () => void
-    return timeoutPromise<void>(timeout, (resolve, reject) => {
+    return timeoutPromise<undefined>(timeout, (resolve, reject) => {
       if (this._strategy instanceof ErrorStrategy) {
         return reject(this._strategy.error)
       }
       if (this.state === state) {
-        return resolve()
+        return resolve(undefined)
       }
       check = (): void => {
         if (this._strategy instanceof ErrorStrategy) {
           return reject(this._strategy.error)
         }
         if (this.state === state) {
-          resolve()
+          resolve(undefined)
         }
       }
       this.on('state', check)

@@ -15,8 +15,8 @@ export enum EClientStatus {
 
 export interface IExpoTransportStrategy extends EventEmitter {
   readonly state: EClientStatus
-  run (token: Promise<Notifications.ExpoPushToken>, receivers: Set<IReceiver>): ICancelable<IExpoTransportStrategy>
-  request (type: string, opts: any): ICancelable<any>
+  run: (token: Promise<Notifications.ExpoPushToken>, receivers: Set<IReceiver>) => ICancelable<IExpoTransportStrategy>
+  request: (type: string, opts: any) => ICancelable<any>
 }
 
 export abstract class Strategy extends EventEmitter implements IExpoTransportStrategy {

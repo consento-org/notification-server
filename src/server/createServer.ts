@@ -8,13 +8,13 @@ import { VERSION, NAME } from '../package'
 export type CB = (error?: Error) => void
 
 export interface INotificationServerListener {
-  address (): string | AddressInfo
-  close (cb: CB): void
-  on (error: 'error', handler: (error: Error) => void): this
+  address: () => string | AddressInfo
+  close: (cb: CB) => void
+  on: (error: 'error', handler: (error: Error) => void) => this
 }
 
 export interface INotificationServer {
-  listen (port: number, cb: CB): INotificationServerListener
+  listen: (port: number, cb: CB) => INotificationServerListener
 }
 
 function isOkMessage (data: any): data is {

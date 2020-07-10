@@ -16,14 +16,14 @@ export interface DBOptions {
 }
 
 export interface DB {
-  toggleSubscription (pushToken: string, idHex: string, toggle: boolean, mainCb: (error: Error, success?: boolean) => void): void
-  list (idHex: string, cb: (error: Error, idHexTokens?: string[]) => void): void
-  channelsByToken (pushToken: string, cb: (error: Error, idsHex?: string[]) => void): void
-  reset (cb: (error: Error) => void): void
+  toggleSubscription: (pushToken: string, idHex: string, toggle: boolean, mainCb: (error: Error, success?: boolean) => void) => void
+  list: (idHex: string, cb: (error: Error, idHexTokens?: string[]) => void) => void
+  channelsByToken: (pushToken: string, cb: (error: Error, idsHex?: string[]) => void) => void
+  reset: (cb: (error: Error) => void) => void
 }
 
 interface IOperationCount {
-  change(db: HyperDb<string, number>, entryHex: string, change: 1 | -1, op: (cb: (error?: Error) => void) => void, mainCb: (error?: Error) => void): void
+  change: (db: HyperDb<string, number>, entryHex: string, change: 1 | -1, op: (cb: (error?: Error) => void) => void, mainCb: (error?: Error) => void) => void
 }
 
 export function createDb ({ log, path, maxSubscriptions = 1000, replicate = false }: DBOptions): DB {
@@ -89,7 +89,7 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
   function DBCount (countPath: string, max: number): IOperationCount {
     if (max === 0) {
       return {
-        change: (_: HyperDb<string, number>, __: string, ___: number, op: (cb: (error?: Error) => void) => void, mainCb: (error?: Error) => void) => {
+        change: (_: HyperDb<string, number>, _name: string, _number: number, op: (cb: (error?: Error) => void) => void, mainCb: (error?: Error) => void) => {
           op(mainCb)
         }
       }
@@ -132,8 +132,8 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
     }
   }
   function DBSet (setPath: string, count: IOperationCount): {
-    toggle (targetHex: string, entryHex: string, toggle: boolean, cb: (error: Error, changed?: boolean) => void): void
-    list (targetHex: string, cb: (error: Error, sourceEntries?: string[]) => void): void
+    toggle: (targetHex: string, entryHex: string, toggle: boolean, cb: (error: Error, changed?: boolean) => void) => void
+    list: (targetHex: string, cb: (error: Error, sourceEntries?: string[]) => void) => void
   } {
     return {
       toggle (targetHex: string, entryHex: string, toggle: boolean, mainCb: (error: Error, changed?: boolean) => void) {
