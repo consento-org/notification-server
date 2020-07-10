@@ -2,12 +2,13 @@ import { AbstractWebsocketStrategy, closeError } from './AbstractWebsocketStrate
 import { EClientStatus, IExpoTransportStrategy } from './strategy'
 import { cancelable, IReceiver, ICancelable } from '@consento/api'
 import { receiversToRequest } from '../receiversToRequest'
+import * as Notifications from 'expo-notifications'
 
 export class WebsocketOpenStrategy extends AbstractWebsocketStrategy {
   state = EClientStatus.WEBSOCKET_OPEN
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
-  run (token: Promise<string>, receivers: Set<IReceiver>): ICancelable<IExpoTransportStrategy> {
+  run (token: Promise<Notifications.ExpoPushToken>, receivers: Set<IReceiver>): ICancelable<IExpoTransportStrategy> {
     return cancelable<IExpoTransportStrategy, this>(function * () {
       const request = yield receiversToRequest(token, receivers)
       yield Promise.all([

@@ -1,3 +1,4 @@
+import * as Notifications from 'expo-notifications'
 import { cancelable, IReceiver, ICancelable } from '@consento/api'
 import { bufferToString } from '@consento/crypto/util/buffer'
 
@@ -9,10 +10,10 @@ export interface IRequest {
 }
 
 // eslint-disable-next-line @typescript-eslint/promise-function-async
-export function receiversToRequest (token: Promise<string>, receivers: Iterable<IReceiver>): ICancelable<IRequest> {
+export function receiversToRequest (token: Promise<Notifications.ExpoPushToken>, receivers: Iterable<IReceiver>): ICancelable<IRequest> {
   // eslint-disable-next-line @typescript-eslint/return-await
   return cancelable<IRequest>(function * () {
-    const pushToken: string = yield token
+    const pushToken: string = ((yield token) as Notifications.ExpoPushToken).data
     const idsBase64: string[] = []
     const signaturesBase64: string[] = []
     for (const receiver of receivers) {

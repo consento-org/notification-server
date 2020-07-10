@@ -2,6 +2,7 @@ import { AppState } from 'react-native'
 import { setup, IEncodable } from '@consento/crypto'
 import { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import { sodium } from '@consento/crypto/core/sodium'
+import * as ExpoNotifications from 'expo-notifications'
 import { Notifications, isSuccess } from '@consento/api/notifications'
 import { ExpoTransport, EClientStatus } from '../client'
 import { createDummyExpoToken } from '../server/__tests__/token-dummy'
@@ -84,7 +85,7 @@ describe('working api integration', () => {
           const opts: IExpoTransportOptions = {
             address,
             // eslint-disable-next-line @typescript-eslint/require-await
-            async getToken (): Promise<string> {
+            async getToken (): Promise<ExpoNotifications.ExpoPushToken> {
               return createDummyExpoToken()
             }
           }

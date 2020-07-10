@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import { IReceiver, ICancelable } from '@consento/api'
 import { cancelableReject } from '../../util/cancelableReject'
+import * as Notifications from 'expo-notifications'
 
 export enum EClientStatus {
   NOADDRESS = 'no_address',
@@ -14,14 +15,14 @@ export enum EClientStatus {
 
 export interface IExpoTransportStrategy extends EventEmitter {
   readonly state: EClientStatus
-  run (token: Promise<string>, receivers: Set<IReceiver>): ICancelable<IExpoTransportStrategy>
+  run (token: Promise<Notifications.ExpoPushToken>, receivers: Set<IReceiver>): ICancelable<IExpoTransportStrategy>
   request (type: string, opts: any): ICancelable<any>
 }
 
 export abstract class Strategy extends EventEmitter implements IExpoTransportStrategy {
   _subscriptions: IReceiver[]
 
-  abstract run (token?: Promise<string>, receivers?: Set<IReceiver>): ICancelable<IExpoTransportStrategy>
+  abstract run (token?: Promise<Notifications.ExpoPushToken>, receivers?: Set<IReceiver>): ICancelable<IExpoTransportStrategy>
 
   abstract readonly state: EClientStatus
 

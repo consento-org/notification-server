@@ -4,6 +4,7 @@ import { IEncryptedMessage, IAnnonymous, IReceiver, ICancelable, cancelable, Can
 import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
 import { IGetExpoToken, IExpoNotificationParts, IExpoTransportOptions } from './types'
 import { AppState, AppStateStatus } from 'react-native'
+import * as Notifications from 'expo-notifications'
 import { getExpoToken } from '../util/getExpoToken'
 import { exists } from '../util/exists'
 import { IExpoTransportStrategy, EClientStatus } from './strategies/strategy'
@@ -38,7 +39,7 @@ function isNotification (data: any): data is INotification {
 }
 
 export class ExpoTransport extends EventEmitter implements INotificationsTransport {
-  _pushToken: Promise<string>
+  _pushToken: Promise<Notifications.ExpoPushToken>
   _getToken: IGetExpoToken
   _subscriptions: Set<IReceiver>
   _address: string
@@ -157,7 +158,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     })
   }
 
-  get token (): Promise<string> {
+  get token (): Promise<Notifications.ExpoPushToken> {
     if (this._pushToken === undefined) {
       this._pushToken = this._getToken()
     }
