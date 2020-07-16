@@ -84,7 +84,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   }
 
   set address (address: string) {
-    if (this._address === address) {
+    if (this._address !== address) {
       this._address = address
       this._updateStrategy()
     }
