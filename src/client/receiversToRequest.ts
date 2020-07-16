@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications'
 import { cancelable, IReceiver, ICancelable } from '@consento/api'
-import { bufferToString } from '@consento/crypto/util/buffer'
+import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
 
 export interface IRequest {
   [key: string]: string
