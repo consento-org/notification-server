@@ -1,14 +1,10 @@
-import { Strategy, EClientStatus, IExpoTransportStrategy } from './strategy'
-import { runForever } from '../../util/runForever'
-import { ICancelable } from '@consento/api'
+import { EClientStatus, IExpoTransportStrategy } from './strategy'
+import { idle } from '../../util/StrategyControl'
 
-export class NoAddressStrategy extends Strategy {
-  state = EClientStatus.NOADDRESS
-
-  async _close (): Promise <void> {}
-
-  // eslint-disable-next-line @typescript-eslint/promise-function-async
-  run (): ICancelable<IExpoTransportStrategy> {
-    return runForever()
+export const noAddressStrategy: IExpoTransportStrategy = {
+  type: EClientStatus.NOADDRESS,
+  run: idle,
+  async request (): Promise<any> {
+    throw new Error('Can not send request in error state')
   }
 }

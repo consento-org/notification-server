@@ -1,6 +1,10 @@
 import * as Notifications from 'expo-notifications'
-import { cancelable, IReceiver, ICancelable } from '@consento/api'
-import { bufferToString, Buffer } from '@consento/crypto/util/buffer'
+import { IReceiver } from '@consento/api'
+import { bufferToString, Buffer, IAbortOptions } from '@consento/api/util'
+import map from '@extra-iterable/map'
+import join from '@extra-iterable/join'
+import pMap from 'p-map'
+import { checkpoint } from '@consento/crypto/util/abort'
 
 export interface IRequest {
   [key: string]: string
@@ -9,22 +13,21 @@ export interface IRequest {
   pushToken: string
 }
 
-// eslint-disable-next-line @typescript-eslint/promise-function-async
-export function receiversToRequest (token: Promise<Notifications.ExpoPushToken>, receivers: Iterable<IReceiver>): ICancelable<IRequest> {
-  // eslint-disable-next-line @typescript-eslint/return-await
-  return cancelable<IRequest>(function * () {
-    const pushToken: string = ((yield token) as Notifications.ExpoPushToken).data
-    const idsBase64: string[] = []
-    const signaturesBase64: string[] = []
-    for (const receiver of receivers) {
-      idsBase64.push(receiver.idBase64)
-      const pushTokenBuffer = Buffer.from(pushToken)
-      signaturesBase64.push(bufferToString(yield receiver.sender.sign(pushTokenBuffer), 'base64'))
-    }
-    return {
-      idsBase64: idsBase64.join(';'),
-      signaturesBase64: signaturesBase64.join(';'),
-      pushToken
-    }
-  })
+const concurrency = 5
+
+export async function receiversToRequest (token: Notifications.ExpoPushToken, receivers: Iterable<IReceiver>, { signal }: IAbortOptions = {}): Promise<IRequest> {
+  const pushToken: string = token.data
+  const pushTokenBuffer = Buffer.from(pushToken)
+  const cp = checkpoint(signal)
+  return {
+    idsBase64: join(map(receivers, receiver => receiver.idBase64), ';'),
+    signaturesBase64: (await cp(pMap(
+      receivers,
+      async receiver => bufferToString(await cp(receiver.sender.sign(pushTokenBuffer)), 'base64'),
+      {
+        concurrency
+      }
+    ))).join(';'),
+    pushToken
+  }
 }

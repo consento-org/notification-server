@@ -1,33 +1,23 @@
-import { EventEmitter } from 'events'
-import { IReceiver, ICancelable } from '@consento/api'
-import { cancelableReject } from '../../util/cancelableReject'
-import * as Notifications from 'expo-notifications'
+/* eslint-disable @typescript-eslint/method-signature-style */
+import { IStrategy } from '../../util/StrategyControl'
+import { ITimeoutOptions } from '@consento/api/util/types'
+import { IExpoNotificationParts } from '../types'
 
 export enum EClientStatus {
   NOADDRESS = 'no_address',
   DESTROYED = 'destroyed',
   ERROR = 'error',
-  FETCH = 'fetch',
   STARTUP = 'startup',
-  WEBSOCKET_OPEN = 'websocket_open',
-  WEBSOCKET_OPENING = 'websocket_opening'
+  FETCH = 'fetch',
+  WEBSOCKET = 'websocket'
 }
 
-export interface IExpoTransportStrategy extends EventEmitter {
-  readonly state: EClientStatus
-  run: (token: Promise<Notifications.ExpoPushToken>, receivers: Set<IReceiver>) => ICancelable<IExpoTransportStrategy>
-  request: (type: string, opts: any) => ICancelable<any>
+export interface IExpoTransportState {
+  address: string
+  foreground: boolean
+  handleInput: (notification: IExpoNotificationParts) => void
 }
 
-export abstract class Strategy extends EventEmitter implements IExpoTransportStrategy {
-  _subscriptions: IReceiver[]
-
-  abstract run (token?: Promise<Notifications.ExpoPushToken>, receivers?: Set<IReceiver>): ICancelable<IExpoTransportStrategy>
-
-  abstract readonly state: EClientStatus
-
-  // eslint-disable-next-line @typescript-eslint/promise-function-async
-  request (type: string, query: { [ key: string ]: string }): ICancelable<any> {
-    return cancelableReject(Object.assign(new Error(`Can not send messages in ${this.state} state`), { code: 'ERR_STATE', state: this.state }))
-  }
+export interface IExpoTransportStrategy extends IStrategy<EClientStatus, IExpoTransportStrategy, IExpoTransportState> {
+  request (type: string, args: any, options: ITimeoutOptions): Promise<any>
 }

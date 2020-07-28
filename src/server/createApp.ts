@@ -5,7 +5,7 @@ import { sodium } from '@consento/crypto/core/sodium'
 import { IEncryptedMessage } from '@consento/crypto/core/types'
 import { DB } from './createDb'
 import WebSocket from 'ws'
-import { exists } from '../util/exists'
+import { exists } from '@consento/api/util'
 import compareVersions from 'compare-versions'
 import { VERSION } from '../package'
 

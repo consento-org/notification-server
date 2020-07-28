@@ -2,7 +2,7 @@ import { createLockCb, FlexLockCb } from 'flexlock-cb'
 import hyperdb, { HyperDbNode, HyperDb } from 'hyperdb'
 import hyperswarm from 'hyperswarm'
 import rimraf from 'rimraf'
-import { exists } from '../util/exists'
+import { exists } from '@consento/api/util'
 
 function flatten<Type> (data: Type[][]): Type[] {
   return data.reduce((result, nodes) => result.concat(nodes), [])

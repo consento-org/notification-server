@@ -1,20 +1,10 @@
-import { Strategy, EClientStatus, IExpoTransportStrategy } from './strategy'
-import { runForever } from '../../util/runForever'
-import { ICancelable } from '@consento/api'
+import { IExpoTransportStrategy, EClientStatus } from './strategy'
+import { AbstractErrorStrategy } from '../../util/StrategyControl'
 
-export class ErrorStrategy extends Strategy {
-  error: Error
-  state = EClientStatus.ERROR
+export class ErrorStrategy extends AbstractErrorStrategy<EClientStatus, IExpoTransportStrategy> implements IExpoTransportStrategy {
+  type = EClientStatus.ERROR
 
-  constructor (error: Error) {
-    super()
-    this.error = error
-  }
-
-  async _close (): Promise <void> {}
-
-  // eslint-disable-next-line @typescript-eslint/promise-function-async
-  run (): ICancelable<IExpoTransportStrategy> {
-    return runForever()
+  async request (): Promise<any> {
+    throw new Error('Can not send request in error state')
   }
 }

@@ -1,37 +1,25 @@
-import { EClientStatus, Strategy, IExpoTransportStrategy } from './strategy'
-import { ICancelable, cancelable } from '@consento/api'
+import { EClientStatus, IExpoTransportStrategy, IExpoTransportState } from './strategy'
 import { VERSION } from '../../package'
-import { FetchStrategy } from './FetchStrategy'
-import { WebsocketOpeningStrategy } from './WebsocketOpeningStrategy'
-import { serverFetch } from '../serverFetch'
+import { FetchStrategy, fetchFromAddress } from './FetchStrategy'
+import { AbortSignal } from '@consento/api/util'
+import { WebsocketStrategy } from './WebsocketStrategy'
 
-export class StartupStrategy extends Strategy {
-  state = EClientStatus.STARTUP
-  _test: ICancelable<void>
-  _address: string
-  _foreground: boolean
-  _fetch: (type: string, query: { [key: string]: any }) => ICancelable<any>
+export const startupStrategy: IExpoTransportStrategy = {
+  type: EClientStatus.STARTUP,
 
-  constructor (address: string, foreground: boolean) {
-    super()
-    this._address = address
-    this._fetch = serverFetch(address)
-    this._foreground = foreground
-  }
+  async run (state: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
+    const data = await fetchFromAddress(state.address, 'compatible', { version: VERSION }, { signal })
+    if (data !== true) {
+      const { server, version: serverVersion } = (await fetchFromAddress(state.address, '', {}, { signal })) as { version: string, server: string }
+      throw Object.assign(new Error(`Server [address=${state.address}, server=${server}, version=${serverVersion}] is not compatible with this client [version=${VERSION}].`), { address: state.address, code: 'ESERVER_INCOMPATIBLE', server, version: VERSION })
+    }
+    if (state.foreground) {
+      return new WebsocketStrategy()
+    }
+    return new FetchStrategy()
+  },
 
-  // eslint-disable-next-line @typescript-eslint/promise-function-async
-  run (): ICancelable<IExpoTransportStrategy> {
-    return cancelable<IExpoTransportStrategy, this>(function * (child) {
-      const data = yield child(this._fetch('compatible', { version: VERSION }))
-      if (data as any !== true) {
-        const { server, version: serverVersion } = (yield child(this._fetch('', {}))) as { version: string, server: string }
-        // eslint-disable-next-line @typescript-eslint/no-throw-literal
-        throw Object.assign(new Error(`Server [address=${this._address}, server=${server}, version=${serverVersion}] is not compatible with this client [version=${VERSION}].`), { address: this._address, code: 'ESERVER_INCOMPATIBLE', server, version: VERSION })
-      }
-      if (this._foreground) {
-        return new WebsocketOpeningStrategy(this._address)
-      }
-      return new FetchStrategy(this._address)
-    }, this)
+  async request (): Promise<any> {
+    throw new Error('Can not send request in error state')
   }
 }
