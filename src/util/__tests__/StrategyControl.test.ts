@@ -127,4 +127,39 @@ describe('StrategyControl', () => {
     await control.awaitChange()
     expect(control.type).toBe(Simple.testNext)
   })
+  it('change event submitted', async () => {
+    let next: (s: SimpleStrategy) => void = () => {
+      throw new Error('any error')
+    }
+    const forever = async (_: any, signal: AbortSignal): Promise<SimpleStrategy> => await new Promise(resolve => {
+      next = resolve
+      signal.addEventListener('abort', () => {
+        resolve(new IdleStrategy(Simple.testAborted))
+      })
+    })
+    const log = []
+    const control = new StrategyControl<Simple, SimpleStrategy>(simpleOpts)
+    control.on('change', () => {
+      log.push(`state-${control.type}`)
+    })
+    log.push('a')
+    control.change({ type: Simple.a, run: forever })
+    await control.awaitChange()
+    log.push('b')
+    next({ type: Simple.b, run: forever })
+    await control.awaitChange()
+    log.push('c')
+    control.change({ type: Simple.c, run: forever })
+    await control.awaitChange()
+    log.push('d')
+    expect(log).toMatchObject([
+      'a',
+      'state-a',
+      'b',
+      'state-b',
+      'c',
+      'state-c',
+      'd'
+    ])
+  })
 })
