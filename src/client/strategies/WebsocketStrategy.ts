@@ -1,5 +1,5 @@
 import { EClientStatus, IExpoTransportStrategy, IExpoTransportState } from './strategy'
-import Websocket, { MessageEvent } from 'ws'
+import WSWebSocket, { MessageEvent } from 'ws'
 import { bubbleAbort, AbortError, ITimeoutOptions, cleanupPromise, exists } from '@consento/api/util'
 
 export function webSocketUrl (address: string): string {
@@ -7,6 +7,11 @@ export function webSocketUrl (address: string): string {
 }
 
 const noop = (): any => {}
+
+// eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
+type WebSocketFactory = new (address: string, opts?: { handshakeTimeout?: number }) => WSWebSocket
+const BuiltInWebSocket: WebSocketFactory = (global as any).WebSocket
+const WebSocket = BuiltInWebSocket !== undefined ? BuiltInWebSocket : WSWebSocket
 
 export function closeError (): Error {
   return Object.assign(new Error('Socket closed.'), { code: 'ESOCKETCLOSED', address: this._address })
@@ -21,8 +26,8 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   run ({ address, handleInput }: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
-    const newWs = (old?: Websocket): Websocket => {
-      const ws = new Websocket(webSocketUrl(address), {
+    const newWs = (old?: WSWebSocket): WSWebSocket => {
+      const ws = new WebSocket(webSocketUrl(address), {
         handshakeTimeout: 1000
       })
       if (old !== undefined) {
@@ -77,7 +82,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
             resolve()
           }
         }
-        if (ws.readyState === Websocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        if (ws.readyState === WSWebSocket.OPEN || ws.readyState === WSWebSocket.CONNECTING) {
           ws.onclose = finish
           ws.close()
         } else {
