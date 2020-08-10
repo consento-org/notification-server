@@ -12,6 +12,7 @@ export function closeError (): Error {
   return Object.assign(new Error('Socket closed.'), { code: 'ESOCKETCLOSED', address: this._address })
 }
 
+const PING_TIME = 2500
 let REQUEST_ID: number = 0
 
 // On React-native: WebSocket.OPEN/../ isn't defined?
@@ -115,6 +116,12 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         setTimeout(restart, 1000)
       }
 
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === WS_STATE.ready) {
+          ws.send('ping')
+        }
+      }, PING_TIME)
+
       this.request = async (type, query, opts) => {
         return await cleanupPromise(
           async (resolve, reject, signal): Promise<() => void> => {
@@ -131,6 +138,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
             return () => {
               // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
               delete requests[rid]
+              clearInterval(pingInterval)
             }
           },
           opts
