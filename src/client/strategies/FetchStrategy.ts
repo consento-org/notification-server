@@ -53,7 +53,11 @@ export async function runFetch (parts: IURLParts, type: string, query: { [key: s
 }
 
 export async function fetchFromAddress (address: string, type: string, query: { [key: string]: any }, opts: ITimeoutOptions): Promise<any> {
-  return await runFetch(getURLParts(address), type, query, opts)
+  try {
+    return await runFetch(getURLParts(address), type, query, opts)
+  } catch (cause) {
+    throw Object.assign(new Error(`${(cause as Error).message}, [address=${address}]`), { cause, address })
+  }
 }
 
 export class FetchStrategy extends AbstractIdleStrategy<EClientStatus, IExpoTransportStrategy> implements IExpoTransportStrategy {
