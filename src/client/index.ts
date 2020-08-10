@@ -51,19 +51,19 @@ function isNotification (data: any): data is INotification {
 }
 
 export class ExpoTransport extends EventEmitter implements INotificationsTransport {
-  #token: Promise<Notifications.ExpoPushToken>
-  #strategy: StrategyControl<EClientStatus, IExpoTransportStrategy, IExpoTransportState>
-  #control: INotificationControl
+  _token: Promise<Notifications.ExpoPushToken>
+  _strategy: StrategyControl<EClientStatus, IExpoTransportStrategy, IExpoTransportState>
+  _control: INotificationControl
 
   handleNotification: (notification: IExpoNotificationParts) => void
 
-  #stateChange: (state: AppStateStatus) => void
-  #emitChange: () => boolean
+  _stateChange: (state: AppStateStatus) => void
+  _emitChange: () => boolean
 
   constructor ({ address, getToken, control }: IExpoTransportOptions) {
     super()
-    this.#control = control
-    this.#token = (getToken ?? getExpoToken)()
+    this._control = control
+    this._token = (getToken ?? getExpoToken)()
     const handleInput = (notification: IExpoNotificationParts): void => {
       const { data } = notification
       if (isNotification(data)) {
@@ -74,79 +74,82 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       }
     }
     this.handleNotification = handleInput
-    this.#strategy = new StrategyControl<EClientStatus, IExpoTransportStrategy, IExpoTransportState>({
+    this._strategy = new StrategyControl<EClientStatus, IExpoTransportStrategy, IExpoTransportState>({
       state: {
         address,
         foreground: AppState.currentState !== 'background',
         handleInput
       },
-      idle: () => startupStrategy,
+      idle: () => this._kickOffStrategy,
       error: error => new ErrorStrategy(error)
     })
-    this.#emitChange = () => this.emit('change')
-    this.#strategy.on('change', this.#emitChange)
+    this._emitChange = () => this.emit('change')
+    this._strategy.on('change', this._emitChange)
 
-    this.#stateChange = () => {
+    this._stateChange = () => {
       const fg = AppState.currentState !== 'background'
-      this.#strategy.state.foreground = fg
+      this._strategy.state.foreground = fg
       const expected = (fg ? EClientStatus.WEBSOCKET : EClientStatus.FETCH)
-      if (this.#strategy.type !== expected) {
+      if (this._strategy.type !== expected) {
         this._restart()
       }
     }
 
     this._restart = this._restart.bind(this)
-    this.#strategy.on('change', () => {
+    this._strategy.on('change', () => {
       if (this.state === EClientStatus.FETCH || this.state === EClientStatus.WEBSOCKET) {
         control.reset().catch(error => { control.error(error) })
       }
     })
-    AppState.addEventListener('change', this.#stateChange)
+    AppState.addEventListener('change', this._stateChange)
   }
 
   async destroy (): Promise<void> {
-    AppState.removeEventListener('change', this.#stateChange)
-    this.#strategy.change(new ErrorStrategy(Object.assign(new Error('destroyed'), { code: 'EDESTROYED' })))
-    this.#strategy.off('change', this.#emitChange)
+    AppState.removeEventListener('change', this._stateChange)
+    this._strategy.change(new ErrorStrategy(Object.assign(new Error('destroyed'), { code: 'EDESTROYED' })))
+    this._strategy.off('change', this._emitChange)
   }
 
   // For debugging
-  get _strategy (): IExpoTransportStrategy {
-    return this.#strategy.current
+  get strategy (): IExpoTransportStrategy {
+    return this._strategy.current
   }
 
   get error (): Error {
-    const current = this.#strategy.current
+    const current = this._strategy.current
     if (current.type === EClientStatus.ERROR) {
       return (current as ErrorStrategy).error
     }
   }
 
   get address (): string {
-    return this.#strategy.state.address
+    return this._strategy.state.address
   }
 
   set address (address: string) {
-    if (this.#strategy.state.address !== address) {
-      this.#strategy.state.address = address
+    if (this._strategy.state.address !== address) {
+      this._strategy.state.address = address
       this._restart()
     }
   }
 
+  get _kickOffStrategy (): IExpoTransportStrategy {
+    if (this.address === null || this.address === undefined || /^\s*$/.test(this.address)) {
+      return noAddressStrategy
+    }
+    return startupStrategy
+  }
+
   _restart (): void {
-    this.#strategy.change(
-      (this.address === null || this.address === undefined || /^\s*$/.test(this.address))
-        ? noAddressStrategy
-        : startupStrategy
-    )
+    this._strategy.change(this._kickOffStrategy)
   }
 
   get state (): EClientStatus {
-    return this.#strategy.type
+    return this._strategy.type
   }
 
   async token (): Promise<Notifications.ExpoPushToken> {
-    return await this.#token
+    return await this._token
   }
 
   async unsubscribe (receivers: IReceiver[], opts: ITimeoutOptions = {}): Promise<boolean[]> {
@@ -177,7 +180,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     if (receivers.length === 0) {
       return []
     }
-    const requestOptions = await receiversToRequest(await this.#token, receivers, opts)
+    const requestOptions = await receiversToRequest(await this._token, receivers, opts)
     try {
       // Mark as changed anyways!
       return this._request(command, requestOptions, opts) as unknown as boolean[]
@@ -191,17 +194,17 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       if (this.state === EClientStatus.WEBSOCKET || this.state === EClientStatus.FETCH) {
         return
       }
-      await this.#strategy.awaitChange({ signal })
+      await this._strategy.awaitChange({ signal })
       bubbleAbort(signal)
     }
   }
 
   async awaitState (state: EClientStatus, opts?: ITimeoutOptions): Promise<void> {
-    return await this.#strategy.awaitType(state, opts)
+    return await this._strategy.awaitType(state, opts)
   }
 
   async awaitChange (opts?: ITimeoutOptions): Promise<EClientStatus> {
-    await this.#strategy.awaitChange(opts)
+    await this._strategy.awaitChange(opts)
     return this.state
   }
 
@@ -211,7 +214,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
         await this.awaitReady(signal)
         resetTimeout()
         try {
-          return await this.#strategy.current.request(command, commandArguments, { signal })
+          return await this._strategy.current.request(command, commandArguments, { signal })
         } catch (cause) {
           if (cause instanceof AbortError) {
             throw cause
@@ -220,7 +223,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
             new Error(`Error while ${command} request [${JSON.stringify(commandArguments)}]:\n${String(cause.stack)}`),
             { command, commandArguments, state: this.state, cause }
           )
-          this.#control.error(error)
+          this._control.error(error)
           throw error
         }
       },
