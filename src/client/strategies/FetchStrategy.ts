@@ -27,37 +27,39 @@ function getURLParts (address: string): IURLParts {
 }
 
 export async function runFetch (parts: IURLParts, type: string, query: { [key: string]: any }, opts: ITimeoutOptions): Promise<any> {
-  return await wrapTimeout(
+  const url = format({
+    ...parts,
+    pathname: `${parts.pathname}${type}`,
+    query
+  })
+  const promise = wrapTimeout(
     async signal => {
-      const url = format({
-        ...parts,
-        pathname: `${parts.pathname}${type}`,
-        query
-      })
       const res = await fetch(url, {
         method: 'POST',
         signal
       })
       const text = await res.text()
       if (res.status !== 200) {
-        throw new Error(`HTTP Request failed[${res.status.toString()}] → ${text}\n${url}`)
+        const status = res.status
+        throw Object.assign(new Error(`Status Error [status=${status.toString()}] → ${text}`), { text, status })
       }
       try {
         return JSON.parse(text)
-      } catch (err) {
-        throw new Error(`HTTP Response not valid JSON. (Error: ${String(err.message)})\n${text}`)
+      } catch (cause) {
+        throw Object.assign(new Error(`HTTP Response from ${url} not valid JSON. (Error: ${(cause as Error).message})\n${text}`), { cause, text })
       }
     },
     opts
   )
+  try {
+    return await promise
+  } catch (cause) {
+    throw Object.assign(new Error(`Error while fetching ${url}:\n${(cause as Error).message}`), { cause, url })
+  }
 }
 
 export async function fetchFromAddress (address: string, type: string, query: { [key: string]: any }, opts: ITimeoutOptions): Promise<any> {
-  try {
-    return await runFetch(getURLParts(address), type, query, opts)
-  } catch (cause) {
-    throw Object.assign(new Error(`${(cause as Error).message}, [address=${address}]`), { cause, address })
-  }
+  return await runFetch(getURLParts(address), type, query, opts)
 }
 
 export class FetchStrategy extends AbstractIdleStrategy<EClientStatus, IExpoTransportStrategy> implements IExpoTransportStrategy {
