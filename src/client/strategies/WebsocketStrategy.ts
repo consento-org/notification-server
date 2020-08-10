@@ -1,6 +1,6 @@
 import { EClientStatus, IExpoTransportStrategy, IExpoTransportState } from './strategy'
-import WSWebSocket, { MessageEvent } from 'ws'
 import { bubbleAbort, AbortError, ITimeoutOptions, cleanupPromise, exists } from '@consento/api/util'
+import WebSocket, { MessageEvent } from 'isomorphic-ws'
 
 export function webSocketUrl (address: string): string {
   return address.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
@@ -8,16 +8,19 @@ export function webSocketUrl (address: string): string {
 
 const noop = (): any => {}
 
-// eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
-type WebSocketFactory = new (address: string, opts?: { handshakeTimeout?: number }) => WSWebSocket
-const BuiltInWebSocket: WebSocketFactory = (global as any).WebSocket
-const WebSocket = BuiltInWebSocket !== undefined ? BuiltInWebSocket : WSWebSocket
-
 export function closeError (): Error {
   return Object.assign(new Error('Socket closed.'), { code: 'ESOCKETCLOSED', address: this._address })
 }
 
 let REQUEST_ID: number = 0
+
+// On React-native: WebSocket.OPEN/../ isn't defined?
+enum WS_STATE {
+  ready = 1,
+  connecting = 2,
+  closing = 3,
+  closed = 4
+}
 
 export class WebsocketStrategy implements IExpoTransportStrategy {
   type = EClientStatus.WEBSOCKET
@@ -26,10 +29,8 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   run ({ address, handleInput }: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
-    const newWs = (old?: WSWebSocket): WSWebSocket => {
-      const ws = new WebSocket(webSocketUrl(address), {
-        handshakeTimeout: 1000
-      })
+    const newWs = (old?: WebSocket): WebSocket => {
+      const ws = new WebSocket(webSocketUrl(address))
       if (old !== undefined) {
         ws.onmessage = old.onmessage
         ws.onerror = old.onerror
@@ -82,7 +83,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
             resolve()
           }
         }
-        if (ws.readyState === WSWebSocket.OPEN || ws.readyState === WSWebSocket.CONNECTING) {
+        if (ws.readyState === WS_STATE.ready || ws.readyState === WS_STATE.connecting) {
           ws.onclose = finish
           ws.close()
         } else {
@@ -100,7 +101,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
           ws.onopen = () => resolve()
         })
       }
-      ws.onerror = error => {
+      ws.onerror = (error: any) => {
         console.warn('[Warning] Websocket connection terminated with error.\n%o', error)
       }
       function restart (): void {
@@ -126,9 +127,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
               }
               resolve(result.body)
             }
-            ws.send(JSON.stringify({ type, rid, query }), (error: Error) => {
-              if (exists(error)) reject(error)
-            })
+            ws.send(JSON.stringify({ type, rid, query }))
             return () => {
               // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
               delete requests[rid]
