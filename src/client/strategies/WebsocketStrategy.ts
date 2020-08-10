@@ -51,6 +51,9 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         if (typeof ev.data !== 'string') {
           return
         }
+        if (ev.data === '"pong"') {
+          return
+        }
         let data
         try {
           data = JSON.parse(ev.data)
@@ -118,7 +121,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
 
       const pingInterval = setInterval(() => {
         if (ws.readyState === WS_STATE.ready) {
-          ws.send('ping')
+          ws.send('"ping"')
         }
       }, PING_TIME)
 

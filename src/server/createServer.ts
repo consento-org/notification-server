@@ -75,6 +75,9 @@ export function createServer (opts: AppOptions): INotificationServer {
       if (typeof event.data !== 'string') {
         return
       }
+      if (event.data === '"ping"') {
+        return '"pong"'
+      }
       let data: any
       try {
         data = JSON.parse(event.data)
