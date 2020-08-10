@@ -23,7 +23,6 @@ import { IExpoTransportStrategy, EClientStatus, IExpoTransportState } from './st
 import { receiversToRequest } from './receiversToRequest'
 import { ErrorStrategy } from './strategies/ErrorStrategy'
 import { startupStrategy } from './strategies/startupStrategy'
-import { noAddressStrategy } from './strategies/noAddressStrategy'
 import { StrategyControl } from '../util/StrategyControl'
 
 export { EClientStatus } from './strategies/strategy'
@@ -80,7 +79,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
         foreground: AppState.currentState !== 'background',
         handleInput
       },
-      idle: () => this._kickOffStrategy,
+      idle: () => startupStrategy,
       error: error => new ErrorStrategy(error)
     })
     this._emitChange = () => this.emit('change')
@@ -133,15 +132,8 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     }
   }
 
-  get _kickOffStrategy (): IExpoTransportStrategy {
-    if (this.address === null || this.address === undefined || /^\s*$/.test(this.address)) {
-      return noAddressStrategy
-    }
-    return startupStrategy
-  }
-
   _restart (): void {
-    this._strategy.change(this._kickOffStrategy)
+    this._strategy.change(startupStrategy)
   }
 
   get state (): EClientStatus {

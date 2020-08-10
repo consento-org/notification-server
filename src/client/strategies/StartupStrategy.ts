@@ -3,11 +3,15 @@ import { VERSION } from '../../package'
 import { FetchStrategy, fetchFromAddress } from './FetchStrategy'
 import { AbortSignal } from '@consento/api/util'
 import { WebsocketStrategy } from './WebsocketStrategy'
+import { noAddressStrategy } from './noAddressStrategy'
 
 export const startupStrategy: IExpoTransportStrategy = {
   type: EClientStatus.STARTUP,
 
   async run (state: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
+    if (state.address === null || state.address === undefined || /^\s*$/.test(state.address)) {
+      return noAddressStrategy
+    }
     const data = await fetchFromAddress(state.address, 'compatible', { version: VERSION }, { signal })
     if (data !== true) {
       const { server, version: serverVersion } = (await fetchFromAddress(state.address, '', {}, { signal })) as { version: string, server: string }
