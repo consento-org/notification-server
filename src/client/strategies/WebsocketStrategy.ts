@@ -1,6 +1,6 @@
 import { EClientStatus, IExpoTransportStrategy, IExpoTransportState } from './strategy'
 import { bubbleAbort, AbortError, ITimeoutOptions, cleanupPromise, exists } from '@consento/api/util'
-import WebSocket, { MessageEvent, CloseEvent } from 'isomorphic-ws'
+import WebSocket, { MessageEvent } from 'isomorphic-ws'
 
 export function webSocketUrl (address: string): string {
   return address.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
@@ -138,7 +138,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
           if (lastClosing < lastOpen) {
             lastClosing = Date.now()
           } else if (Date.now() - lastClosing > TIMEOUT_TIME) {
-            ws.onclose(new CloseEvent('close', { code: 4002, reason: 'closing timed out' }) as any)
+            ws.onclose({ target: ws, code: 4001, reason: 'closing timed out', wasClean: false })
           }
           return
         }
