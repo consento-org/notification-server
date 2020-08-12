@@ -43,7 +43,7 @@ export function createServer (opts: AppOptions): INotificationServer {
   const { logError, log } = opts
 
   const wrapAsync = (op: (query: { [key: string]: any }) => Promise<any>) => (req: Request) => {
-    log({ via: 'http' })
+    log({ via: 'http', query: req.query })
     op(req.query)
       .then(data => {
         req.res.status(200).send(JSON.stringify(data)).end()
