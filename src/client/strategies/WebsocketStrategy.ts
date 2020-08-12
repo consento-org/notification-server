@@ -12,7 +12,9 @@ export function closeError (): Error {
   return Object.assign(new Error('Socket closed.'), { code: 'ESOCKETCLOSED', address: this._address })
 }
 
-const PING_TIME = 2500
+const PING_TIME = 1000
+const TIMEOUT_TIME = 2500
+
 let REQUEST_ID: number = 0
 
 // On React-native: WebSocket.OPEN/../ isn't defined?
@@ -47,7 +49,9 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
     return new Promise((resolve, reject) => {
       let ws = newWs()
       const requests: { [key: number]: (result: { error?: any, body?: any }) => void } = {}
+      let lastMessage = Date.now()
       ws.onmessage = (ev: MessageEvent): void => {
+        lastMessage = Date.now()
         if (typeof ev.data !== 'string') {
           return
         }
@@ -119,11 +123,17 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         setTimeout(restart, 1000)
       }
 
-      const pingInterval = setInterval(() => {
-        if (ws.readyState === WS_STATE.ready) {
+      const checkInterval = setInterval(() => {
+        if (ws.readyState !== WS_STATE.ready) {
+          return
+        }
+        const timePassed = Date.now() - lastMessage
+        if (timePassed > TIMEOUT_TIME) {
+          ws.close(4000, 'connection-timeout')
+        } else if (timePassed > PING_TIME) {
           ws.send('"ping"')
         }
-      }, PING_TIME)
+      }, 100)
 
       this.request = async (type, query, opts) => {
         return await cleanupPromise(
@@ -141,7 +151,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
             return () => {
               // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
               delete requests[rid]
-              clearInterval(pingInterval)
+              clearInterval(checkInterval)
             }
           },
           opts
