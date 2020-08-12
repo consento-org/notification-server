@@ -84,6 +84,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         ws.onerror = noop
         ws.onmessage = noop
         const finish = (): void => {
+          clearInterval(pingInterval)
           ws.onclose = noop
           if (exists(err)) {
             reject(err)
@@ -152,7 +153,6 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
             return () => {
               // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
               delete requests[rid]
-              clearInterval(pingInterval)
             }
           },
           opts
