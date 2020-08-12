@@ -6,6 +6,7 @@ import { AppOptions, createApp } from './createApp'
 import { VERSION, NAME } from '../package'
 
 export type CB = (error?: Error) => void
+const TIMEOUT_TIME = 5000
 
 export interface INotificationServerListener {
   address: () => string | AddressInfo
@@ -69,9 +70,12 @@ export function createServer (opts: AppOptions): INotificationServer {
   http.post('/compatible', wrapAsync(app.compatible))
   http.get('/version', (req: Request) => { req.res.send(VERSION).end() })
 
+  const timeouts = new Map()
+
   function handleConnection (socket: WebSocket): void {
     const session = randomBytes(8).toString('hex')
     socket.onmessage = (event: WebSocket.MessageEvent) => {
+      timeouts.set(socket, Date.now() + TIMEOUT_TIME)
       if (typeof event.data !== 'string') {
         return
       }
@@ -174,10 +178,28 @@ export function createServer (opts: AppOptions): INotificationServer {
           })
         })
     }
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      log({ type: 'session-close', session, reason: event.reason, code: event.code })
       app.closeSocket(session)
+      timeouts.delete(socket)
     }
   }
+
+  let nextCheckTimeout: NodeJS.Timeout
+  const nextCheck = (): void => {
+    nextCheckTimeout = setTimeout(() => {
+      const now = Date.now()
+      for (const [socket, timeout] of timeouts.entries()) {
+        if (timeout < now) {
+          timeouts.delete(socket)
+          socket.close(4000, 'connection-timeout')
+        }
+      }
+      nextCheck()
+    }, 200) // leave 200ms frames between operations for the server to breathe
+  }
+
+  nextCheck()
 
   return {
     listen (port, cb: CB) {
@@ -185,6 +207,7 @@ export function createServer (opts: AppOptions): INotificationServer {
       const wss = new WebSocket.Server({ server })
       wss.on('listening', cb)
       wss.on('connection', handleConnection)
+      wss.on('close', () => clearTimeout(nextCheckTimeout))
       return server
     }
   }
