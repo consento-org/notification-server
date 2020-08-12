@@ -123,7 +123,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
       ws.onclose = () => {
         ws.onclose = noop
         wsOpen = newOpenPromise()
-        setTimeout(restart, 1000)
+        setTimeout(restart, PING_TIME)
       }
 
       let lastClosing = -1
