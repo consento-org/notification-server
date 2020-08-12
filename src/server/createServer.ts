@@ -193,7 +193,7 @@ export function createServer (opts: AppOptions): INotificationServer {
       for (const [socket, timeout] of timeouts.entries()) {
         if (timeout < now) {
           timeouts.delete(socket)
-          socket.close(4000, 'connection-timeout')
+          socket.close(4002, 'server-timeout')
         }
       }
       nextCheck()

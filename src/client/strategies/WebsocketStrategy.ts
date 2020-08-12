@@ -147,7 +147,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         }
         const timePassed = Date.now() - lastMessage
         if (timePassed > TIMEOUT_TIME) {
-          ws.close(4000, 'connection-timeout')
+          ws.close(4000, 'client-timeout')
         } else if (timePassed > PING_TIME) {
           // Don't send ping if other message has been sent!
           ws.send('"ping"')
