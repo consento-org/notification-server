@@ -74,6 +74,7 @@ export function createServer (opts: AppOptions): INotificationServer {
 
   function handleConnection (socket: WebSocket): void {
     const session = randomBytes(8).toString('hex')
+    log({ type: 'session-open', session })
     socket.onmessage = (event: WebSocket.MessageEvent) => {
       timeouts.set(socket, Date.now() + TIMEOUT_TIME)
       if (typeof event.data !== 'string') {
