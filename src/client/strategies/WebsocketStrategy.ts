@@ -1,6 +1,6 @@
 import { EClientStatus, IExpoTransportStrategy, IExpoTransportState } from './strategy'
 import { bubbleAbort, AbortError, ITimeoutOptions, cleanupPromise, exists } from '@consento/api/util'
-import WebSocket, { MessageEvent } from 'isomorphic-ws'
+import WebSocket, { MessageEvent, CloseEvent } from 'isomorphic-ws'
 
 export function webSocketUrl (address: string): string {
   return address.replace(/^http:\/\//g, 'ws://').replace(/^https:\/\//g, 'wss://')
@@ -126,12 +126,21 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         setTimeout(restart, 1000)
       }
 
+      let lastClosing = -1
       const pingInterval = setInterval(() => {
         if (ws.readyState === WS_STATE.connecting) {
           if (Date.now() - lastOpen > TIMEOUT_TIME) {
             ws.close(4001, 'connecting-timeout')
             return
           }
+        }
+        if (ws.readyState === WS_STATE.closing) {
+          if (lastClosing < lastOpen) {
+            lastClosing = Date.now()
+          } else if (Date.now() - lastClosing > TIMEOUT_TIME) {
+            ws.onclose(new CloseEvent('close', { code: 4002, reason: 'closing timed out' }) as any)
+          }
+          return
         }
         if (ws.readyState !== WS_STATE.ready) {
           return
