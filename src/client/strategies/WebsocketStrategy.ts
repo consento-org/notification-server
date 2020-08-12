@@ -12,8 +12,8 @@ export function closeError (): Error {
   return Object.assign(new Error('Socket closed.'), { code: 'ESOCKETCLOSED', address: this._address })
 }
 
-const PING_TIME = 1000
-const TIMEOUT_TIME = 2500
+const PING_TIME = 750
+const TIMEOUT_TIME = PING_TIME * 4
 
 let REQUEST_ID: number = 0
 
@@ -123,7 +123,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         setTimeout(restart, 1000)
       }
 
-      const checkInterval = setInterval(() => {
+      const pingInterval = setInterval(() => {
         if (ws.readyState !== WS_STATE.ready) {
           return
         }
@@ -131,9 +131,10 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         if (timePassed > TIMEOUT_TIME) {
           ws.close(4000, 'connection-timeout')
         } else if (timePassed > PING_TIME) {
+          // Don't send ping if other message has been sent!
           ws.send('"ping"')
         }
-      }, 100)
+      }, PING_TIME)
 
       this.request = async (type, query, opts) => {
         return await cleanupPromise(
@@ -151,7 +152,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
             return () => {
               // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
               delete requests[rid]
-              clearInterval(checkInterval)
+              clearInterval(pingInterval)
             }
           },
           opts
