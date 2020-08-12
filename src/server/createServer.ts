@@ -80,7 +80,8 @@ export function createServer (opts: AppOptions): INotificationServer {
         return
       }
       if (event.data === '"ping"') {
-        return '"pong"'
+        socket.send('"pong"')
+        return
       }
       let data: any
       try {
