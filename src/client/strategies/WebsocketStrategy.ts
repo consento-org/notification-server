@@ -32,8 +32,10 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   run ({ address, handleInput }: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
+    let lastOpen: number
     const newWs = (old?: WebSocket): WebSocket => {
       const ws = new WebSocket(webSocketUrl(address))
+      lastOpen = Date.now()
       if (old !== undefined) {
         ws.onmessage = old.onmessage
         ws.onerror = old.onerror
@@ -125,6 +127,12 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
       }
 
       const pingInterval = setInterval(() => {
+        if (ws.readyState === WS_STATE.connecting) {
+          if (Date.now() - lastOpen > TIMEOUT_TIME) {
+            ws.close(4001, 'connecting-timeout')
+            return
+          }
+        }
         if (ws.readyState !== WS_STATE.ready) {
           return
         }
