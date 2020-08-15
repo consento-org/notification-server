@@ -25,6 +25,11 @@ enum WS_STATE {
   closed = 4
 }
 
+interface IExtendedWebsocket extends WebSocket {
+  openPromise?: Promise<void>
+  _resolveOpen?: (next?: Promise<void>) => void
+}
+
 export class WebsocketStrategy implements IExpoTransportStrategy {
   type = EClientStatus.WEBSOCKET
 
@@ -33,25 +38,29 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   run ({ address, handleInput }: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
     let lastOpen: number
-    const newWs = (old?: WebSocket): WebSocket => {
-      const ws = new WebSocket(webSocketUrl(address))
+    let lastMessage: number
+    const newWs = (old?: IExtendedWebsocket): IExtendedWebsocket => {
+      const ws = new WebSocket(webSocketUrl(address)) as IExtendedWebsocket
       lastOpen = Date.now()
+      ws.openPromise = new Promise(resolve => {
+        lastMessage = Date.now()
+        ws._resolveOpen = resolve
+        ws.onopen = () => resolve()
+      })
       if (old !== undefined) {
         ws.onmessage = old.onmessage
         ws.onerror = old.onerror
         ws.onclose = old.onclose
-        ws.onopen = old.onopen
-        old.onopen = noop
         old.onerror = noop
         old.onmessage = noop
         old.onclose = noop
+        old._resolveOpen(ws.openPromise)
       }
       return ws
     }
     return new Promise((resolve, reject) => {
       let ws = newWs()
       const requests: { [key: number]: (result: { error?: any, body?: any }) => void } = {}
-      let lastMessage = Date.now()
       ws.onmessage = (ev: MessageEvent): void => {
         lastMessage = Date.now()
         if (typeof ev.data !== 'string') {
@@ -106,13 +115,6 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
 
       signal.addEventListener('abort', onabort)
 
-      let wsOpen = newOpenPromise()
-      // eslint-disable-next-line @typescript-eslint/promise-function-async
-      function newOpenPromise (): Promise<void> {
-        return new Promise<void>(resolve => {
-          ws.onopen = () => resolve()
-        })
-      }
       ws.onerror = (error: any) => {
         console.warn('[Warning] Websocket connection terminated with error.\n%o', error)
       }
@@ -123,7 +125,12 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
 
       ws.onclose = () => {
         ws.onclose = noop
-        wsOpen = newOpenPromise()
+        ws.openPromise = new Promise((resolve) => {
+          setTimeout(() => {
+            restart()
+            resolve(ws.openPromise)
+          }, PING_TIME / 2)
+        })
         setTimeout(restart, PING_TIME)
       }
 
@@ -158,7 +165,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
       this.request = async (type, query, opts) => {
         return await cleanupPromise(
           async (resolve, reject, signal): Promise<() => void> => {
-            await wsOpen
+            await ws.openPromise
             bubbleAbort(signal)
             const rid = REQUEST_ID++
             requests[rid] = (result: { error?: any, body?: any }): void => {
