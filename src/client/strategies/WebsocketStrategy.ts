@@ -85,6 +85,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         ws.onopen = noop
         ws.onerror = noop
         ws.onmessage = noop
+        signal.removeEventListener('abort', onabort)
         const finish = (): void => {
           clearInterval(pingInterval)
           ws.onclose = noop
