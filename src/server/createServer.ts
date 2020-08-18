@@ -6,7 +6,7 @@ import { AppOptions, createApp } from './createApp'
 import { VERSION, NAME } from '../package'
 
 export type CB = (error?: Error) => void
-const TIMEOUT_TIME = 5000
+const TIMEOUT_TIME = 90 * 1000 // Using 1m30s is a good time to adjust for mobile interruptions.
 
 export interface INotificationServerListener {
   address: () => string | AddressInfo
