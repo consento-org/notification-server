@@ -19,7 +19,7 @@
   "author": "Martin Heidegger <martin.heidegger@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@consento/api": "^0.4.0",
+    "@consento/api": "^0.4.1",
     "@consento/crypto": "^0.4.1",
     "@extra-iterable/join": "^2.5.12",
     "@extra-iterable/map": "^2.5.12",
