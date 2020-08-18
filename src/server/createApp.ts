@@ -168,6 +168,20 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     }
   }
 
+  const closeSocket = (session: string): boolean => {
+    const info = webSocketsBySession[session]
+    if (info === undefined) {
+      return false
+    }
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete webSocketsBySession[session]
+    for (const pushTokenHex of info.pushTokensHex) {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete webSocketsByPushToken[pushTokenHex]
+    }
+    return true
+  }
+
   async function sendMessage (idBase64: string, message: EncryptedMessageBase64): Promise<string[]> {
     const messageId = randomBytes(8).toString('hex')
     const idHex = Buffer.from(idBase64, 'base64').toString('hex')
@@ -190,8 +204,30 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       }
     })
 
+    const closeSocket = (session: string): boolean => {
+      const info = webSocketsBySession[session]
+      if (info === undefined) {
+        return false
+      }
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete webSocketsBySession[session]
+      for (const pushTokenHex of info.pushTokensHex) {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete webSocketsByPushToken[pushTokenHex]
+      }
+      return true
+    }
+
     const [expoMessages, webSocketMessages] = split(messages, (message: ExpoPushMessage): boolean => {
-      return webSocketsByPushToken[String(message.to)] === undefined
+      const socket = webSocketsByPushToken[String(message.to)]
+      if (socket === undefined) {
+        return true
+      }
+      if (socket.socket.readyState > 1) {
+        closeSocket(socket.session)
+        return true
+      }
+      return false
     })
 
     const expoPromises = expo
@@ -218,6 +254,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         }), (error: Error) => {
           if (error !== null && error !== undefined) {
             socket.close()
+            closeSocket(session)
             return reject(error)
           }
           resolve([{ status: 'ok', id: 'ws::pass-through' }])
@@ -326,19 +363,7 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
       // eslint-disable-next-line @typescript-eslint/return-await
       return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), false, cb))
     },
-    closeSocket (session: string): boolean {
-      const info = webSocketsBySession[session]
-      if (info === undefined) {
-        return false
-      }
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-      delete webSocketsBySession[session]
-      for (const pushTokenHex of info.pushTokensHex) {
-        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-        delete webSocketsByPushToken[pushTokenHex]
-      }
-      return true
-    },
+    closeSocket,
     async compatible (query: { version: string }): Promise<boolean> {
       return compareVersions.compare(query.version, VERSION, '>=')
     },
