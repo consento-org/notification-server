@@ -12,8 +12,11 @@ export function closeError (): Error {
   return Object.assign(new Error('Socket closed.'), { code: 'ESOCKETCLOSED', address: this._address })
 }
 
+const TICK_TIME = 50
 const PING_TIME = 750
 const TIMEOUT_TIME = PING_TIME * 4
+const PING_TICKS = PING_TIME / TICK_TIME
+const TIMEOUT_TICKS = TIMEOUT_TIME / TICK_TIME
 
 let REQUEST_ID: number = 0
 
@@ -39,11 +42,12 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
   run ({ address, handleInput }: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
     let lastOpen: number
     let lastMessage: number
+    let tick = 0
     const newWs = (old?: IExtendedWebsocket): IExtendedWebsocket => {
       const ws = new WebSocket(webSocketUrl(address)) as IExtendedWebsocket
-      lastOpen = Date.now()
+      lastOpen = tick
       ws.openPromise = new Promise(resolve => {
-        lastMessage = Date.now()
+        lastMessage = tick
         ws._resolveOpen = resolve
         ws.onopen = () => resolve()
       })
@@ -60,9 +64,36 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
     }
     return new Promise((resolve, reject) => {
       let ws = newWs()
+      const tickInterval = setInterval(() => {
+        tick += 1
+        if (ws.readyState === WS_STATE.connecting) {
+          if (tick > lastOpen + TIMEOUT_TICKS) {
+            ws.close(4001, 'connecting-timeout')
+            return
+          }
+        }
+        if (ws.readyState === WS_STATE.closing) {
+          if (lastClosing < lastOpen) {
+            lastClosing = tick
+          } else if (tick > lastClosing + TIMEOUT_TICKS) {
+            ws.onclose({ target: ws, code: 4001, reason: 'closing timed out', wasClean: false })
+          }
+          return
+        }
+        if (ws.readyState !== WS_STATE.ready) {
+          return
+        }
+        const ticksSinceLastMessage = tick - lastMessage
+        if (ticksSinceLastMessage > TIMEOUT_TICKS) {
+          ws.close(4000, 'client-timeout')
+        } else if (ticksSinceLastMessage > PING_TICKS) {
+          // Don't send ping if other message has been sent!
+          ws.send('"ping"')
+        }
+      }, TICK_TIME)
       const requests: { [key: number]: (result: { error?: any, body?: any }) => void } = {}
       ws.onmessage = (ev: MessageEvent): void => {
-        lastMessage = Date.now()
+        lastMessage = tick
         if (typeof ev.data !== 'string') {
           return
         }
@@ -96,7 +127,7 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         ws.onmessage = noop
         signal.removeEventListener('abort', onabort)
         const finish = (): void => {
-          clearInterval(pingInterval)
+          clearInterval(tickInterval)
           ws.onclose = noop
           if (exists(err)) {
             reject(err)
@@ -135,32 +166,6 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
       }
 
       let lastClosing = -1
-      const pingInterval = setInterval(() => {
-        if (ws.readyState === WS_STATE.connecting) {
-          if (Date.now() - lastOpen > TIMEOUT_TIME) {
-            ws.close(4001, 'connecting-timeout')
-            return
-          }
-        }
-        if (ws.readyState === WS_STATE.closing) {
-          if (lastClosing < lastOpen) {
-            lastClosing = Date.now()
-          } else if (Date.now() - lastClosing > TIMEOUT_TIME) {
-            ws.onclose({ target: ws, code: 4001, reason: 'closing timed out', wasClean: false })
-          }
-          return
-        }
-        if (ws.readyState !== WS_STATE.ready) {
-          return
-        }
-        const timePassed = Date.now() - lastMessage
-        if (timePassed > TIMEOUT_TIME) {
-          ws.close(4000, 'client-timeout')
-        } else if (timePassed > PING_TIME) {
-          // Don't send ping if other message has been sent!
-          ws.send('"ping"')
-        }
-      }, PING_TIME)
 
       this.request = async (type, query, opts) => {
         return await cleanupPromise(
