@@ -25,6 +25,7 @@ import { receiversToRequest } from './receiversToRequest'
 import { ErrorStrategy } from './strategies/ErrorStrategy'
 import { startupStrategy } from './strategies/startupStrategy'
 import { StrategyControl } from '../util/StrategyControl'
+import { Subscription } from '@unimodules/core'
 
 export { EClientStatus } from './strategies/strategy'
 
@@ -59,6 +60,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
 
   _stateChange: (state: AppStateStatus) => void
   _emitChange: () => boolean
+  _receivedListener: Subscription[]
 
   constructor ({ address, getToken, control }: IExpoTransportOptions) {
     super()
@@ -118,9 +120,32 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
       }
     })
     AppState.addEventListener('change', this._stateChange)
+    Notifications.setNotificationHandler({
+      handleNotification: async (notification) => {
+        await handleNotification(notification.request.content.data)
+        return {
+          shouldShowAlert: false,
+          shouldPlaySound: false,
+          shouldSetBadge: false
+        }
+      },
+      handleError: (notificationId, error) => control.error(Object.assign(error, { notificationId }))
+    })
+    this._receivedListener = [
+      Notifications.addNotificationResponseReceivedListener(notification => {
+        handleNotification(notification.notification.request.content.data)
+          .catch(error => control.error(error))
+      }),
+      Notifications.addNotificationReceivedListener(notification => {
+        handleNotification(notification.request.content.data)
+          .catch(error => control.error(error))
+      })
+    ]
   }
 
   async destroy (): Promise<void> {
+    for (const listener of this._receivedListener) listener.remove()
+    Notifications.setNotificationHandler(null)
     AppState.removeEventListener('change', this._stateChange)
     this._strategy.change(new ErrorStrategy(Object.assign(new Error('destroyed'), { code: 'EDESTROYED' })))
     this._strategy.off('change', this._emitChange)
@@ -229,7 +254,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
             throw cause
           }
           const error = Object.assign(
-            new Error(`Error while ${command} request [${JSON.stringify(commandArguments)}]:\n${String(cause.stack)}`),
+            new Error(`Error while ${command} request [state=${this.state}][${JSON.stringify(commandArguments)}]:\n${String(cause)}\n${String(cause.stack)}`),
             { command, commandArguments, state: this.state, cause }
           )
           this._control.error(error)
