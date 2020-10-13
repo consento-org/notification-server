@@ -6,12 +6,11 @@ import * as ExpoNotifications from 'expo-notifications'
 import { Notifications, isSuccess } from '@consento/api/notifications'
 import { ExpoTransport, EClientStatus } from '../client'
 import { createDummyExpoToken } from '../server/__tests__/token-dummy'
-import { EventEmitter } from 'events'
 import { mkdirSync, mkdtempSync } from 'fs'
 import { IExpoParts } from '../server/createApp'
 import { createServer, INotificationServerListener } from '../server/createServer'
 import { createDb } from '../server/createDb'
-import { INotificationControl, INotificationsTransport } from '@consento/api'
+import { INotificationControl, INotificationsTransport, INotificationProcessor } from '@consento/api'
 import { exists } from '@consento/api/util'
 
 const { createReceiver } = setup(sodium)
@@ -49,8 +48,8 @@ describe('working api integration', () => {
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       log: () => {}
     })
-    await new Promise((resolve, reject) => db.reset((error: Error) => exists(error) ? reject(error) : resolve()))
-    const notificationsMock = new EventEmitter()
+    await new Promise((resolve, reject) => db.reset((error) => exists(error) ? reject(error) : resolve()))
+    const handlerList: Array<(notification: any) => Promise<boolean>> = []
     const expoMock: IExpoParts = {
       chunkPushNotifications (messages: ExpoPushMessage[]) {
         return [messages]
@@ -58,10 +57,11 @@ describe('working api integration', () => {
       async sendPushNotificationsAsync (messages: ExpoPushMessage[]): Promise<ExpoPushTicket[]> {
         const result: ExpoPushTicket[] = []
         for (const message of messages) {
-          await (new Promise(resolve => {
-            notificationsMock.emit('message', message)
-            setImmediate(resolve)
-          }))
+          await (async () => {
+            for (const handler of handlerList) {
+              await handler(message.data)
+            }
+          })()
           result.push({ status: 'ok', id: 'ticket' })
         }
         return result
@@ -80,7 +80,7 @@ describe('working api integration', () => {
     ))
     let address = listener.address()
     if (typeof address !== 'string') {
-      address = `http://localhost:${String(address.port)}`
+      address = `http://localhost:${String(address?.port)}`
     }
     const opts = {
       address,
@@ -92,7 +92,7 @@ describe('working api integration', () => {
     const { sender: senderA, receiver: receiverA } = await createReceiver()
     const { sender: senderB, receiver: receiverB } = await createReceiver()
     const message = 'Hello World'
-    let transport: ExpoTransport
+    let transport: ExpoTransport | undefined
     changeState('background')
     const client = new Notifications({
       transport: (control: INotificationControl): INotificationsTransport => {
@@ -103,11 +103,11 @@ describe('working api integration', () => {
             error: fail
           }
         })
-        notificationsMock.addListener('message', transport.handleNotification)
+        handlerList.push(transport.handleNotification)
         return transport
       }
     })
-    await transport.awaitState(EClientStatus.FETCH, { timeout: 100 })
+    await transport?.awaitState(EClientStatus.FETCH, { timeout: 100 })
     const { afterSubscribe: receive } = await client.receive(receiverA)
     await Promise.all<any>([
       client.send(senderA, message),
@@ -119,21 +119,23 @@ describe('working api integration', () => {
     await expect(client.subscribe([receiverA, receiverB])).resolves.toEqual([true, true])
     const directMessage = 'Ping Pong'
     changeState('active')
-    await transport.awaitState(EClientStatus.WEBSOCKET)
+    await transport?.awaitState(EClientStatus.WEBSOCKET)
     const { afterSubscribe: receiveThroughSocket } = await client.receive(receiverA)
     await client.send(senderA, directMessage)
     await expect(receiveThroughSocket).resolves.toBe(directMessage)
     await expect(client.unsubscribe([receiverA])).resolves.toEqual([false]) // the receiving of the message should have already unsubscribed receiverA
     await expect(client.reset([receiverA])).resolves.toEqual([true])
     let messageReceived = false
-    client.processors.add((message) => {
+    const processor: INotificationProcessor = async (message): Promise<boolean> => {
       messageReceived = true
       if (isSuccess(message)) {
         expect(message.body).toBe('Post A')
       } else {
         fail(message)
       }
-    })
+      return true
+    }
+    client.processors.add(processor)
     await expect(client.send(senderA, 'Post A')).resolves.toEqual(['ws::pass-through'])
     try {
       await client.send(senderB, 'Post B')
@@ -144,7 +146,7 @@ describe('working api integration', () => {
     await wait(10)
     expect(messageReceived).toBe(true)
     await client.reset([])
-    await transport.destroy()
+    await transport?.destroy()
     await new Promise((resolve, reject) => listener.close(error => exists(error) ? reject(error) : resolve()))
   })
 })

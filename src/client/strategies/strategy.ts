@@ -13,7 +13,7 @@ export enum EClientStatus {
 }
 
 export interface IExpoTransportState {
-  address: string
+  address?: string
   foreground: boolean
   handleInput: (notification: IExpoNotificationParts) => void
 }

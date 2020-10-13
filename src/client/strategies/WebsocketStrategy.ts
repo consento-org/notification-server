@@ -8,10 +8,6 @@ export function webSocketUrl (address: string): string {
 
 const noop = (): any => {}
 
-export function closeError (): Error {
-  return Object.assign(new Error('Socket closed.'), { code: 'ESOCKETCLOSED', address: this._address })
-}
-
 const TICK_TIME = 50
 const PING_TIME = 750
 const TIMEOUT_TIME = PING_TIME * 4
@@ -30,16 +26,21 @@ enum WS_STATE {
 
 interface IExtendedWebsocket extends WebSocket {
   openPromise?: Promise<void>
-  _resolveOpen?: (next?: Promise<void>) => void
+  _resolveOpen: (next?: Promise<void>) => void
 }
+
+async function noopAsync (): Promise<void> {}
 
 export class WebsocketStrategy implements IExpoTransportStrategy {
   type = EClientStatus.WEBSOCKET
 
-  request: (type: string, query: { [ key: string ]: string }, opts: ITimeoutOptions) => Promise<any>
+  request: (type: string, query: { [ key: string ]: string }, opts: ITimeoutOptions) => Promise<any> = noopAsync
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   run ({ address, handleInput }: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
+    if (!exists(address)) {
+      return Promise.reject(new Error('Address required to run in the background'))
+    }
     let lastOpen: number
     let lastMessage: number
     let tick = 0

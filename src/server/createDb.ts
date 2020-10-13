@@ -16,23 +16,23 @@ export interface DBOptions {
 }
 
 export interface DB {
-  toggleSubscription: (pushToken: string, idHex: string, toggle: boolean, mainCb: (error: Error, success?: boolean) => void) => void
-  list: (idHex: string, cb: (error: Error, idHexTokens?: string[]) => void) => void
-  channelsByToken: (pushToken: string, cb: (error: Error, idsHex?: string[]) => void) => void
-  reset: (cb: (error: Error) => void) => void
+  toggleSubscription: (pushToken: string, idHex: string, toggle: boolean, mainCb: (error: Error | null, success?: boolean) => void) => void
+  list: (idHex: string, cb: (error: Error | null, idHexTokens?: string[]) => void) => void
+  channelsByToken: (pushToken: string, cb: (error: Error | null, idsHex?: string[]) => void) => void
+  reset: (cb: (error: Error | null) => void) => void
 }
 
 interface IOperationCount {
-  change: (db: HyperDb<string, number>, entryHex: string, change: 1 | -1, op: (cb: (error?: Error) => void) => void, mainCb: (error?: Error) => void) => void
+  change: (db: HyperDb<string, number>, entryHex: string, change: 1 | -1, op: (cb: (error: Error | null) => void) => void, mainCb: (error: Error | null) => void) => void
 }
 
 export function createDb ({ log, path, maxSubscriptions = 1000, replicate = false }: DBOptions): DB {
   const swarm = hyperswarm()
 
   const mainLock = createLockCb()
-  let _db: HyperDb<string, number> = null
+  let _db: HyperDb<string, number> | null = null
 
-  function reset (cb: (error: Error) => void): void {
+  function reset (cb: (error: Error | null) => void): void {
     mainLock(unlock => {
       if (_db !== null) {
         _db = null
@@ -45,25 +45,26 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
     }, cb)
   }
 
-  function getDb (cb: (error: Error, db: HyperDb<string, number>) => void): void {
-    mainLock(unlock => {
+  function getDb (cb: (error: Error | null, db?: HyperDb<string, number>) => void): void {
+    mainLock<HyperDb<string, number>>(unlock => {
       if (_db !== null) {
         return unlock(null, _db)
       }
-      _db = hyperdb<string, number>(path, {
+      const db = hyperdb<string, number>(path, {
         keyEncoding: 'utf8',
         valueEncoding: 'json'
       })
+      _db = db
       if (replicate) {
-        _db.on('ready', () => {
-          log({ replicating: _db.discoveryKey.toString('hex') })
-          swarm.join(_db.discoveryKey, {
+        db.on('ready', () => {
+          log({ replicating: db.discoveryKey.toString('hex') })
+          swarm.join(db.discoveryKey, {
             lookup: true,
             announce: true
           })
           swarm.on('connection', (socket, details) => {
             log({ newPeer: details })
-            const replication = _db.replicate()
+            const replication = db.replicate()
             replication.pipe(socket).pipe(replication)
           })
         })
@@ -89,18 +90,18 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
   function DBCount (countPath: string, max: number): IOperationCount {
     if (max === 0) {
       return {
-        change: (_: HyperDb<string, number>, _name: string, _number: number, op: (cb: (error?: Error) => void) => void, mainCb: (error?: Error) => void) => {
+        change: (_: HyperDb<string, number>, _name: string, _number: number, op: (cb: (error: Error | null) => void) => void, mainCb: (error: Error | null) => void) => {
           op(mainCb)
         }
       }
     }
-    const change = (db: HyperDb<string, number>, entryHex: string, numChange: 1 | -1, op: (count: number, cb: (error?: Error) => void) => void, cb: (error: Error) => void): void => {
+    const change = (db: HyperDb<string, number>, entryHex: string, numChange: 1 | -1, op: (count: number, cb: (error: Error | null) => void) => void, cb: (error: Error | null) => void): void => {
       const entryUseCountPath = `/${countPath}/${entryHex}`
       const entryUseCountLock = getLock(entryUseCountPath)
-      entryUseCountLock(countLockCb => db.get(entryUseCountPath, (error: Error, countRaw: HyperDbNode[]) => {
+      entryUseCountLock(countLockCb => db.get(entryUseCountPath, (error: Error | null, countRaw?: HyperDbNode[]) => {
         if (exists(error)) return countLockCb(error)
-        let count = (0 in countRaw) ? countRaw[0].value : 0
-        op(count, (error: Error): void => {
+        let count = countRaw !== undefined && (0 in countRaw) ? countRaw[0].value : 0
+        op(count, (error: Error | null): void => {
           if (exists(error)) return countLockCb(error)
           count += numChange
           db.put(entryUseCountPath, count, (error: Error) => {
@@ -118,7 +119,7 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
       }), cb)
     }
     return {
-      change: (db: HyperDb<string, number>, entryHex: string, numChange: 1 | -1, op: (cb: (error?: Error) => void) => void, mainCb: (error?: Error) => void) => {
+      change: (db: HyperDb<string, number>, entryHex: string, numChange: 1 | -1, op: (cb: (error: Error | null) => void) => void, mainCb: (error: Error | null) => void) => {
         change(db, entryHex, numChange, (count, cb) => {
           if (numChange === 1 && count > max) {
             return cb(new Error(`Too many relations: ${countPath}[${entryHex}]`))
@@ -132,12 +133,12 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
     }
   }
   function DBSet (setPath: string, count: IOperationCount): {
-    toggle: (targetHex: string, entryHex: string, toggle: boolean, cb: (error: Error, changed?: boolean) => void) => void
-    list: (targetHex: string, cb: (error: Error, sourceEntries?: string[]) => void) => void
+    toggle: (targetHex: string, entryHex: string, toggle: boolean, cb: (error: Error | null, changed?: boolean) => void) => void
+    list: (targetHex: string, cb: (error: Error | null, sourceEntries?: string[]) => void) => void
   } {
     return {
-      toggle (targetHex: string, entryHex: string, toggle: boolean, mainCb: (error: Error, changed?: boolean) => void) {
-        getDb((error: Error, db: HyperDb<string, number>) => {
+      toggle (targetHex: string, entryHex: string, toggle: boolean, mainCb: (error: Error | null, changed?: boolean) => void) {
+        getDb((error: Error | null, db?: HyperDb<string, number>) => {
           if (exists(error)) {
             return mainCb(error)
           }
@@ -145,14 +146,14 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
           log({ [toggle ? 'add' : 'remove']: targetPath })
           const lock = getLock(targetPath)
           lock(cb => {
-            db.get(targetPath, (error: Error, data: HyperDbNode[]) => {
+            db?.get(targetPath, (error, data) => {
               if (exists(error)) return cb(error) // Error is passed on
-              const inData = (0 in data)
+              const inData = data !== undefined && (0 in data)
               if (inData && toggle) return cb(null, false) // Already added
               if (!inData && !toggle) return cb(null, false) // Already deleted
               count.change(db, entryHex, toggle ? 1 : -1, (cb) => {
                 toggle ? db.put(targetPath, 1, cb) : db.del(targetPath, cb)
-              }, (error: Error) => {
+              }, (error: Error | null) => {
                 if (exists(error)) return cb(error)
                 return cb(null, true)
               })
@@ -160,12 +161,13 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
           }, mainCb)
         })
       },
-      list (idHex: string, cb: (error: Error, pushTokensHex: string[]) => void) {
-        getDb((error: Error, db: HyperDb<string, number>) => {
-          if (exists(error)) return cb(error, null)
+      list (idHex: string, cb: (error: Error | null, pushTokensHex?: string[]) => void) {
+        getDb((error, db) => {
+          if (exists(error)) return cb(error)
           const prefix = `${setPath}/${idHex}/`
-          db.list(prefix, (error: Error, data: HyperDbNode[][]) => {
-            if (exists(error)) return cb(error, null)
+          db?.list(prefix, (error, data) => {
+            if (exists(error)) return cb(error)
+            if (!exists(data)) return cb(new Error('empty data'))
             cb(null, flatten(data).map(node => node.key.substr(prefix.length)))
           })
         })
@@ -176,13 +178,13 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
   const tokensByChannel = DBSet('channels', DBCount('tokens', maxSubscriptions))
   const channelsByToken = DBSet('channelsByToken', DBCount('channelCount', 0))
 
-  function toggleSubscription (pushToken: string, idHex: string, toggle: boolean, mainCb: (error: Error, success?: boolean) => void): void {
+  function toggleSubscription (pushToken: string, idHex: string, toggle: boolean, mainCb: (error: Error | null, success?: boolean) => void): void {
     const pushTokenHex = Buffer.from(pushToken).toString('hex')
-    tokensByChannel.toggle(idHex, pushTokenHex, toggle, (channelError: Error, tokenChanged?: boolean) => {
+    tokensByChannel.toggle(idHex, pushTokenHex, toggle, (channelError, tokenChanged) => {
       if (exists(channelError)) return mainCb(channelError)
-      channelsByToken.toggle(pushTokenHex, idHex, toggle, (pushTokenError: Error, channelChanged?: boolean) => {
+      channelsByToken.toggle(pushTokenHex, idHex, toggle, (pushTokenError, channelChanged) => {
         if (exists(pushTokenError)) {
-          return tokensByChannel.toggle(idHex, pushTokenHex, !toggle, (resetError: Error) => {
+          return tokensByChannel.toggle(idHex, pushTokenHex, !toggle, resetError => {
             if (exists(resetError)) {
               log({
                 unlikelyToggleError: {
@@ -197,7 +199,7 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
             return mainCb(pushTokenError)
           })
         }
-        mainCb(null, tokenChanged || channelChanged)
+        mainCb(null, tokenChanged ?? channelChanged)
       })
     })
   }
@@ -205,14 +207,14 @@ export function createDb ({ log, path, maxSubscriptions = 1000, replicate = fals
   return {
     toggleSubscription,
     reset,
-    channelsByToken (pushToken: string, cb: (error: Error, idsHex?: string[]) => void) {
+    channelsByToken (pushToken: string, cb: (error: Error | null, idsHex?: string[]) => void) {
       const pushTokenHex = Buffer.from(pushToken).toString('hex')
       channelsByToken.list(pushTokenHex, cb)
     },
-    list (idHex: string, cb: (error: Error, pushTokens?: string[]) => void) {
-      tokensByChannel.list(idHex, (error: Error, pushTokensHex: string[]) => {
+    list (idHex: string, cb: (error: Error | null, pushTokens?: string[]) => void) {
+      tokensByChannel.list(idHex, (error, pushTokensHex) => {
         if (exists(error)) return cb(error)
-        cb(null, pushTokensHex.map(pushTokenHex => Buffer.from(pushTokenHex, 'hex').toString()))
+        cb(null, pushTokensHex?.map(pushTokenHex => Buffer.from(pushTokenHex, 'hex').toString()))
       })
     }
   }

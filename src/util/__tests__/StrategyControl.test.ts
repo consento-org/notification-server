@@ -87,7 +87,6 @@ describe('StrategyControl', () => {
     }
   })
   it('state is passed', async () => {
-    interface state { x: number }
     const originalState = { x: 1 }
     const control = new StrategyControl<Simple, SimpleStrategy>({
       ...simpleOpts,
@@ -119,9 +118,9 @@ describe('StrategyControl', () => {
     await control.awaitType(Simple.test)
     control.change({
       type: Simple.testNext,
-      run: () => {
+      run: async () => {
         expect(abortCalled).toBe(true)
-        return null
+        return await new Promise(resolve => setImmediate(resolve, null))
       }
     })
     await control.awaitChange()

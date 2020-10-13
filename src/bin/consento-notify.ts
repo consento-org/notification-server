@@ -5,7 +5,7 @@ import Expo from 'expo-server-sdk'
 import { resolve } from 'path'
 import { VERSION } from '../package'
 
-const DB_PATH = resolve(__dirname, ('NOTIFICATION_DB_PATH' in process.env) ? process.env.NOTIFICATION_DB_PATH : 'db')
+const DB_PATH = resolve(__dirname, process.env.NOTIFICATION_DB_PATH ?? 'db')
 
 function log (obj: any): void {
   console.log(JSON.stringify({
@@ -43,8 +43,8 @@ const app = createServer({
   })
 })
 
-const port = ('PORT' in process.env) ? parseInt(process.env.PORT) : 3000
-const listener = app.listen(port, (error: Error) => {
+const port = parseInt(process.env.PORT ?? '3000', 10)
+const listener = app.listen(port, (error?: Error): void => {
   log({
     start: listener.address(),
     error,

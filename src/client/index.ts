@@ -14,7 +14,8 @@ import {
   bufferToString,
   wrapTimeout,
   ITimeoutOptions,
-  bubbleAbort
+  bubbleAbort,
+  exists
 } from '@consento/api/util'
 import { EventEmitter } from 'events'
 import { IExpoNotificationParts, IExpoTransportOptions } from './types'
@@ -54,7 +55,7 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
   _strategy: StrategyControl<EClientStatus, IExpoTransportStrategy, IExpoTransportState>
   _control: INotificationControl
 
-  handleNotification: (notification: IExpoNotificationParts) => void
+  handleNotification: (notification: IExpoNotificationParts) => Promise<boolean>
 
   _stateChange: (state: AppStateStatus) => void
   _emitChange: () => boolean
@@ -63,21 +64,37 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     super()
     this._control = control
     this._token = (getToken ?? getExpoToken)()
-    const handleInput = (notification: IExpoNotificationParts): void => {
-      const { data } = notification
+    const handleNotification = async (data: any): Promise<boolean> => {
       if (isNotification(data)) {
-        control.message(data.idBase64, {
+        const content = await control.message(data.idBase64, {
           body: Buffer.from(data.bodyBase64, 'base64'),
           signature: Buffer.from(data.signatureBase64, 'base64')
-        }).catch(error => console.error(error))
+        })
+        if (typeof content === 'boolean') {
+          return content
+        }
+        if (exists(content)) {
+          await Notifications.scheduleNotificationAsync({
+            content,
+            trigger: {
+              seconds: 0
+            }
+          })
+        }
+        return true
       }
+      return false
     }
-    this.handleNotification = handleInput
+    this.handleNotification = handleNotification
     this._strategy = new StrategyControl<EClientStatus, IExpoTransportStrategy, IExpoTransportState>({
       state: {
         address,
         foreground: AppState.currentState !== 'background',
-        handleInput
+        handleInput: (notification: IExpoNotificationParts): void => {
+          handleNotification(notification.data)
+            .then()
+            .catch(error => control.error(error))
+        }
       },
       idle: () => startupStrategy,
       error: error => new ErrorStrategy(error)
@@ -114,18 +131,18 @@ export class ExpoTransport extends EventEmitter implements INotificationsTranspo
     return this._strategy.current
   }
 
-  get error (): Error {
+  get error (): Error | undefined {
     const current = this._strategy.current
     if (current.type === EClientStatus.ERROR) {
       return (current as ErrorStrategy).error
     }
   }
 
-  get address (): string {
+  get address (): string | undefined {
     return this._strategy.state.address
   }
 
-  set address (address: string) {
+  set address (address: string | undefined) {
     if (this._strategy.state.address !== address) {
       this._strategy.state.address = address
       this._restart()

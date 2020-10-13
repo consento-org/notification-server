@@ -13,6 +13,7 @@
     "skipLibCheck": true,
     "types": ["jest"],
     "declaration": true,
+    "strict": true,
     "paths": {
       "*": [
         "node_modules/*",

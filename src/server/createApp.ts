@@ -34,7 +34,7 @@ function toMap (list: string[]): { [entry: string]: boolean } {
 
 function _asyncSeries<Entry, Result> (
   entries: Entry[],
-  op: (entry: Entry, cb: (error: Error | null, result: Result) => void) => void,
+  op: (entry: Entry, cb: (error: Error | null, result?: Result) => void) => void,
   resolve: (result: Result[]) => void,
   reject: (error: Error) => void,
   result: Result[]
@@ -45,10 +45,17 @@ function _asyncSeries<Entry, Result> (
   if (entries.length === 0) {
     return resolve(result)
   }
-  const entry = entries.shift()
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+  const entry = entries.shift() as Entry
+  if (entry === undefined) {
+    return reject(new Error())
+  }
   op(entry, (error, partResult) => {
     if (error !== null && error !== undefined) {
       return reject(error)
+    }
+    if (!exists(partResult)) {
+      return reject(new Error('result excepted'))
     }
     result.push(partResult)
     _asyncSeries(entries, op, resolve, reject, result)
@@ -92,7 +99,7 @@ export interface AppOptions {
   db: DB
   log: (msg?: any) => void
   logError: (msg?: any) => void
-  expo?: IExpoParts
+  expo: IExpoParts
 }
 
 export interface IExpoParts {
@@ -110,9 +117,9 @@ export interface EncryptedMessageBase64 {
 }
 
 export interface IApp {
-  subscribe: (query: any, session?: string, socket?: WebSocket) => Promise<boolean[]>
+  subscribe: (query: any, session?: ISessionInfo) => Promise<boolean[]>
   unsubscribe: (query: any) => Promise<boolean[]>
-  reset: (query: any, session?: string, socket?: WebSocket) => Promise<boolean[]>
+  reset: (query: any, session?: ISessionInfo) => Promise<boolean[]>
   send: (query: any) => Promise<string[]>
   compatible: (query: any) => Promise<boolean>
   closeSocket: (session: string) => boolean
@@ -142,6 +149,11 @@ interface IExpoErrorCode {
 
 function isCodedError (ticket: any): ticket is IExpoErrorCode {
   return ticket.code !== null
+}
+
+export interface ISessionInfo {
+  session: string
+  socket: WebSocket
 }
 
 export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
@@ -186,9 +198,9 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     const messageId = randomBytes(8).toString('hex')
     const idHex = Buffer.from(idBase64, 'base64').toString('hex')
 
-    const pushTokensHex = await new Promise <string[]>((resolve, reject) => db.list(idHex, (error: Error, pushTokensHex: string[]) => {
-      if (error !== null && error !== undefined) {
-        return reject(error)
+    const pushTokensHex = await new Promise <string[]>((resolve, reject) => db.list(idHex, (error, pushTokensHex) => {
+      if (exists(error) || pushTokensHex === undefined) {
+        return reject(error ?? new Error('no pushtoken received'))
       }
       resolve(pushTokensHex)
     }))
@@ -233,7 +245,17 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     const expoPromises = expo
       .chunkPushNotifications(expoMessages)
       // eslint-disable-next-line @typescript-eslint/promise-function-async
-      .map(messagesChunk => sendExpo(messageId, messagesChunk))
+      .map(messagesChunk => {
+        log({
+          send: {
+            idHex,
+            message,
+            messageId,
+            via: 'expo'
+          }
+        })
+        return sendExpo(messageId, messagesChunk)
+      })
 
     const webSocketPromises = webSocketMessages
       // eslint-disable-next-line @typescript-eslint/return-await
@@ -251,8 +273,8 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
         socket.send(JSON.stringify({
           type: 'message',
           body: message.data
-        }), (error: Error) => {
-          if (error !== null && error !== undefined) {
+        }), (error?: Error) => {
+          if (exists(error)) {
             socket.close()
             closeSocket(session)
             return reject(error)
@@ -291,18 +313,16 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
     }, [])
   }
 
-  const registerSocket = (pushTokenHex: string, session: string, socket: WebSocket): boolean => {
+  const registerSocket = (pushTokenHex: string, session: ISessionInfo): boolean => {
     log({ registerWebSocket: { session, pushTokenHex } })
-    webSocketsByPushToken[pushTokenHex] = {
-      socket, session
-    }
-    let info = webSocketsBySession[session]
+    webSocketsByPushToken[pushTokenHex] = session
+    let info = webSocketsBySession[session.session]
     if (info === undefined) {
       info = {
         pushTokensHex: new Set(),
-        socket
+        socket: session.socket
       }
-      webSocketsBySession[session] = info
+      webSocketsBySession[session.session] = info
     }
     if (info.pushTokensHex.has(pushTokenHex)) {
       info.pushTokensHex.add(pushTokenHex)
@@ -312,18 +332,18 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
   }
 
   return {
-    async subscribe (query: any, session?: string, socket?: WebSocket): Promise<boolean[]> {
+    async subscribe (query: any, session?: ISessionInfo): Promise<boolean[]> {
       const { pushToken, idsBase64 } = await processTokens(log, query)
-      if (socket !== undefined) {
-        registerSocket(pushToken, session, socket)
+      if (session !== undefined) {
+        registerSocket(pushToken, session)
       }
       // eslint-disable-next-line @typescript-eslint/return-await
       return asyncSeries <string, boolean>(idsBase64, (idBase64, cb) => db.toggleSubscription(pushToken, Buffer.from(idBase64, 'base64').toString('hex'), true, cb))
     },
-    async reset (query: any, session?: string, socket?: WebSocket): Promise<boolean[]> {
+    async reset (query: any, session?: ISessionInfo): Promise<boolean[]> {
       const { pushToken, idsBase64: channelsToSubscribeBase64 } = await processTokens(log, query)
-      if (socket !== undefined) {
-        registerSocket(pushToken, session, socket)
+      if (session !== undefined) {
+        registerSocket(pushToken, session)
       }
 
       const subscribedChannelsHex = await (new Promise<string[]>((resolve, reject) => {
@@ -348,9 +368,9 @@ export function createApp ({ db, log, logError, expo }: AppOptions): IApp {
 
       const channelsToSubscribeHex = Object.keys(channelsToSubscribeHexLookup)
       await asyncSeries <string, boolean>(channelsToUnsubscribeHex, (idHex, cb) => db.toggleSubscription(pushToken, idHex, false, cb))
-      await asyncSeries <string, boolean>(channelsToSubscribeHex, (idHex, cb) => db.toggleSubscription(pushToken, idHex, true, (error: Error, success?: boolean) => {
+      await asyncSeries <string, boolean>(channelsToSubscribeHex, (idHex, cb) => db.toggleSubscription(pushToken, idHex, true, (error: Error | null, success?: boolean) => {
         if (exists(error)) return cb(error, success)
-        resultMap[idHex] = success
+        resultMap[idHex] = success ?? false
         cb(null, success)
       }))
       const result: boolean[] = requestedChannelsHex.map(channelIdHex => resultMap[channelIdHex] || false)

@@ -12,16 +12,16 @@ export interface IStrategy<TType, TStrategy extends IStrategy<TType, TStrategy, 
   type: TType
 
   // eslint-disable-next-line @typescript-eslint/method-signature-style
-  run (state: TState, signal: AbortSignal): Promise<TStrategy>
+  run (state: TState, signal: AbortSignal): Promise<TStrategy | null>
 }
 
 export abstract class AbstractIdleStrategy <TType, TStrategy extends IStrategy<TType, TStrategy>, TState = any> implements IStrategy<TType, TStrategy, TState> {
   abstract type: TType
 
   // eslint-disable-next-line @typescript-eslint/promise-function-async
-  run (_: any, signal: AbortSignal): Promise<TStrategy> {
+  run (_: any, signal: AbortSignal, cleanup?: () => void): Promise<TStrategy> {
     return cleanupPromise(() => {
-      return () => {}
+      return cleanup ?? (() => {})
     }, { signal })
   }
 }
@@ -51,7 +51,7 @@ export class StrategyControl <TType, TStrategy extends IStrategy<TType, TStrateg
   #error: (err: Error) => TStrategy
   #idle: () => TStrategy
   #current: TStrategy
-  #next: TStrategy
+  #next?: TStrategy
   #state: TState
 
   constructor ({ state, init, error, idle }: IStrategyControlOptions<TState, TStrategy>) {
@@ -59,7 +59,10 @@ export class StrategyControl <TType, TStrategy extends IStrategy<TType, TStrateg
     this.#state = state
     this.#error = error
     this.#idle = idle
-    this.#run(init ?? idle())
+    // The following two assignments are taken to make sure that the #current and #abort are set in the constructor
+    this.#current = init ?? idle()
+    this.#abort = () => {}
+    this.#run(this.#current)
   }
 
   #run = (strategy: TStrategy): void => {
@@ -71,11 +74,11 @@ export class StrategyControl <TType, TStrategy extends IStrategy<TType, TStrateg
     strategy.run(this.#state, currentControl.signal)
       .catch(error => {
         if (error instanceof AbortError && exists(this.#next)) {
-          return
+          return null
         }
         return this.#error(error)
       })
-      .then((next: TStrategy) => {
+      .then((next: TStrategy | null) => {
         const actualNext = this.#next ?? next ?? this.#idle()
         this.#next = undefined
         this.#run(actualNext)
@@ -121,8 +124,8 @@ export class StrategyControl <TType, TStrategy extends IStrategy<TType, TStrateg
     return this.#current
   }
 
-  change (strategy: TStrategy): void {
-    this.#next = strategy
+  change (strategy: TStrategy | null): void {
+    this.#next = strategy ?? this.#idle()
     const abort = this.#abort
     this.#abort = () => {} // Prevent repeat aborts
     abort()

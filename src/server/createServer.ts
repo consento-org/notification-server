@@ -9,7 +9,7 @@ export type CB = (error?: Error) => void
 const TIMEOUT_TIME = 90 * 1000 // Using 1m30s is a good time to adjust for mobile interruptions.
 
 export interface INotificationServerListener {
-  address: () => string | AddressInfo
+  address: () => string | AddressInfo | null
   close: (cb: CB) => void
   on: (error: 'error', handler: (error: Error) => void) => this
 }
@@ -47,28 +47,28 @@ export function createServer (opts: AppOptions): INotificationServer {
     log({ via: 'http', query: req.query })
     op(req.query)
       .then(data => {
-        req.res.status(200).send(JSON.stringify(data)).end()
+        req.res?.status(200).send(JSON.stringify(data)).end()
       })
       .catch(error => {
         if (error.httpCode !== undefined) {
-          req.res.status(error.httpCode).end(error.message)
+          req.res?.status(error.httpCode).end(error.message)
         } else {
           logError({
             type: 'http-error',
             query: req.query,
             error
           })
-          req.res.status(500).send('Error.')
+          req.res?.status(500).send('Error.')
         }
       })
   }
-  http.all('/', (req: Request) => { req.res.send({ server: NAME, version: VERSION }).end() })
+  http.all('/', (req: Request) => { req.res?.send({ server: NAME, version: VERSION }).end() })
   http.post('/send', wrapAsync(app.send))
   http.post('/subscribe', wrapAsync(app.subscribe))
   http.post('/unsubscribe', wrapAsync(app.unsubscribe))
   http.post('/reset', wrapAsync(app.reset))
   http.post('/compatible', wrapAsync(app.compatible))
-  http.get('/version', (req: Request) => { req.res.send(VERSION).end() })
+  http.get('/version', (req: Request) => { req.res?.send(VERSION).end() })
 
   const timeouts = new Map()
 
@@ -110,7 +110,7 @@ export function createServer (opts: AppOptions): INotificationServer {
         if (data.type === 'subscribe') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
           // eslint-disable-next-line @typescript-eslint/return-await
-          return app.subscribe(data.query, session, event.target)
+          return app.subscribe(data.query, { session, socket: event.target })
         }
         if (data.type === 'unsubscribe') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
@@ -120,7 +120,7 @@ export function createServer (opts: AppOptions): INotificationServer {
         if (data.type === 'reset') {
           log({ via: 'websocket', rid: data.rid, type: data.type, session })
           // eslint-disable-next-line @typescript-eslint/return-await
-          return app.reset(data.query, session, event.target)
+          return app.reset(data.query, { session, socket: event.target })
         }
         if (data.type === 'compatible') {
           // eslint-disable-next-line @typescript-eslint/return-await
@@ -138,7 +138,7 @@ export function createServer (opts: AppOptions): INotificationServer {
               type: 'response',
               rid: data.rid,
               body
-            }), (error: Error) => {
+            }), error => {
               if (error !== null && error !== undefined) {
                 logError({
                   type: 'websocket-success-error',
@@ -163,7 +163,7 @@ export function createServer (opts: AppOptions): INotificationServer {
                 message: 'Error.',
                 code: '505'
               }
-            }), (error: Error) => {
+            }), error => {
               if (error !== null && error !== undefined) {
                 logError({
                   type: 'websocket-error-error',

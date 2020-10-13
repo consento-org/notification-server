@@ -1,9 +1,10 @@
 import { IExpoTransportStrategy, EClientStatus, IExpoTransportState } from './strategy'
-import { ITimeoutOptions, wrapTimeout, AbortSignal } from '@consento/api/util'
+import { ITimeoutOptions, wrapTimeout, AbortSignal, exists } from '@consento/api/util'
 import { AbstractIdleStrategy } from '../../util/StrategyControl'
 import { format } from 'url'
 import fetch from 'cross-fetch'
 import urlParse from 'url-parse'
+import { ErrorStrategy } from './ErrorStrategy'
 
 interface IURLParts {
   protocol: string
@@ -62,12 +63,18 @@ export async function fetchFromAddress (address: string, type: string, query: { 
   return await runFetch(getURLParts(address), type, query, opts)
 }
 
+async function noopAsync (): Promise<void> {}
+
 export class FetchStrategy extends AbstractIdleStrategy<EClientStatus, IExpoTransportStrategy> implements IExpoTransportStrategy {
   type = EClientStatus.FETCH
-  request: (type: string, query: { [key: string]: any }, opts: ITimeoutOptions) => Promise<any>
+  request: (type: string, query: { [key: string]: any }, opts: ITimeoutOptions) => Promise<any> = noopAsync
 
   async run (state: IExpoTransportState, signal: AbortSignal): Promise<IExpoTransportStrategy> {
-    const parts = getURLParts(state.address)
+    const { address } = state
+    if (!exists(address)) {
+      return new ErrorStrategy(new Error('Address required to run in the background'))
+    }
+    const parts = getURLParts(address)
     // eslint-disable-next-line @typescript-eslint/promise-function-async
     this.request = (type, query, opts) => runFetch(parts, type, query, opts)
     return await super.run(state, signal)

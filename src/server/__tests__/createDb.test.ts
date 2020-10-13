@@ -26,13 +26,13 @@ describe('database operations', () => {
       maxSubscriptions: 10
     })
     let order = 0
-    db.toggleSubscription('abcd', 'xyz', true, (error: Error, success: boolean) => {
+    db.toggleSubscription('abcd', 'xyz', true, (error: Error | null, success?: boolean): void => {
       expect(error).toBe(null)
       expect(success).toBe(true)
       expect(order).toBe(0)
       order += 1
     })
-    db.toggleSubscription('abcd', 'xyz', true, (error: Error, success: boolean) => {
+    db.toggleSubscription('abcd', 'xyz', true, (error: Error | null, success?: boolean): void => {
       expect(error).toBe(null) // no error
       expect(success).toBe(false) // second subscription doesnt
       expect(order).toBe(1)
@@ -40,16 +40,16 @@ describe('database operations', () => {
       db.list('xyz', (error, data) => {
         expect(error).toBe(null) // no error
         expect(data).toEqual(['abcd']) // list has one entry after subscription
-        db.channelsByToken('abcd', (error: Error, data) => {
+        db.channelsByToken('abcd', (error: Error | null, data) => {
           expect(error).toBe(null)
           expect(data).toEqual(['xyz'])
-          db.toggleSubscription('abcd', 'xyz', false, (error: Error, success: boolean) => {
+          db.toggleSubscription('abcd', 'xyz', false, (error: Error | null, success?: boolean) => {
             expect(error).toBe(null) // no error
             expect(success).toBe(true) // unsubworked
             expect(order).toBe(2)
             order += 1
           })
-          db.toggleSubscription('abcd', 'xyz', false, (error: Error, success: boolean) => {
+          db.toggleSubscription('abcd', 'xyz', false, (error: Error | null, success?: boolean) => {
             expect(error).toBe(null) // no error
             expect(success).toBe(false) // unsub failed
             expect(order).toBe(3)
@@ -76,12 +76,12 @@ describe('database operations', () => {
       replicate: false,
       maxSubscriptions: 10
     })
-    db.toggleSubscription('abc', 'xyz', true, (error: Error, success: boolean) => {
+    db.toggleSubscription('abc', 'xyz', true, (error: Error | null, success?: boolean) => {
       expect(error).toBe(null)
       expect(success).toBe(true)
-      db.reset((error: Error) => {
+      db.reset(error => {
         expect(error).toBe(null)
-        db.toggleSubscription('abc', 'xyz', true, (error: Error, success: boolean) => {
+        db.toggleSubscription('abc', 'xyz', true, (error: Error | null, success?: boolean) => {
           expect(error).toBe(null)
           expect(success).toBe(true)
           cb()
