@@ -172,6 +172,12 @@ export class WebsocketStrategy implements IExpoTransportStrategy {
         return await cleanupPromise(
           async (resolve, reject, signal): Promise<() => void> => {
             await ws.openPromise
+            if (ws.readyState !== WebSocket.OPEN) {
+              // https://github.com/facebook/react-native/pull/29004
+              restart()
+              await ws.openPromise
+              throw new Error('Socket closed.')
+            }
             bubbleAbort(signal)
             const rid = REQUEST_ID++
             requests[rid] = (result: { error?: any, body?: any }): void => {
